@@ -1,31 +1,23 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, LoaderCircle, MessageSquarePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ImageLightbox } from "@/components/image-lightbox";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { fetchAccounts, generateImage, type Account, type ImageModel } from "@/lib/api";
+import { editImage, fetchAccounts, generateImage, type Account, type ImageModel } from "@/lib/api";
+import { ImageComposer } from "@/app/image/components/image-composer";
+import { ImageResults } from "@/app/image/components/image-results";
+import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import {
   clearImageConversations,
   deleteImageConversation,
   listImageConversations,
   saveImageConversation,
   type ImageConversation,
+  type ImageConversationMode,
   type StoredImage,
+  type StoredReferenceImage,
 } from "@/store/image-conversations";
-import { cn } from "@/lib/utils";
 
 const imageModelOptions: Array<{ label: string; value: ImageModel }> = [
   { label: "gpt-image-1", value: "gpt-image-1" },
@@ -89,11 +81,33 @@ async function normalizeConversationHistory(items: ImageConversation[]) {
   return normalized;
 }
 
+function createId() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("读取参考图失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function ImagePage() {
   const didLoadQuotaRef = useRef(false);
+  const resultsViewportRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageCount, setImageCount] = useState("1");
+  const [imageMode, setImageMode] = useState<ImageConversationMode>("generate");
   const [imageModel, setImageModel] = useState<ImageModel>("gpt-image-1");
+  const [referenceImageFile, setReferenceImageFile] = useState<File | null>(null);
+  const [referenceImagePreview, setReferenceImagePreview] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ImageConversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
@@ -101,20 +115,19 @@ export default function ImagePage() {
   const [availableQuota, setAvailableQuota] = useState("加载中");
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
-  const resultsViewportRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const parsedCount = useMemo(() => Math.max(1, Math.min(10, Number(imageCount) || 1)), [imageCount]);
   const selectedConversation = useMemo(
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
+  const parsedCount = useMemo(() => Math.max(1, Math.min(10, Number(imageCount) || 1)), [imageCount]);
   const isSelectedGenerating = selectedConversationId !== null && generatingIds.has(selectedConversationId);
   const hasAnyGenerating = generatingIds.size > 0;
 
   const addGeneratingId = useCallback((id: string) => {
     setGeneratingIds((prev) => new Set(prev).add(id));
   }, []);
+
   const removeGeneratingId = useCallback((id: string) => {
     setGeneratingIds((prev) => {
       const next = new Set(prev);
@@ -236,9 +249,19 @@ export default function ImagePage() {
     }
   };
 
+  const resetComposer = useCallback(() => {
+    setImagePrompt("");
+    setImageCount("1");
+    setReferenceImageFile(null);
+    setReferenceImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
   const handleCreateDraft = () => {
     setSelectedConversationId(null);
-    setImagePrompt("");
+    resetComposer();
     textareaRef.current?.focus();
   };
 
@@ -269,6 +292,23 @@ export default function ImagePage() {
     }
   };
 
+  const handleReferenceImageChange = useCallback(async (file: File | null) => {
+    if (!file) {
+      setReferenceImageFile(null);
+      setReferenceImagePreview(null);
+      return;
+    }
+
+    try {
+      const preview = await readFileAsDataUrl(file);
+      setReferenceImageFile(file);
+      setReferenceImagePreview(preview);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "读取参考图失败";
+      toast.error(message);
+    }
+  }, []);
+
   const handleGenerateImage = async () => {
     const prompt = imagePrompt.trim();
     if (!prompt) {
@@ -276,20 +316,33 @@ export default function ImagePage() {
       return;
     }
 
+    if (imageMode === "edit" && !referenceImageFile) {
+      toast.error("请先上传参考图");
+      return;
+    }
+
     const now = new Date().toISOString();
-    const conversationId =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const conversationId = createId();
+    const referenceImage: StoredReferenceImage | undefined =
+      imageMode === "edit" && referenceImageFile && referenceImagePreview
+        ? {
+            name: referenceImageFile.name,
+            type: referenceImageFile.type || "image/png",
+            dataUrl: referenceImagePreview,
+          }
+        : undefined;
+
     const draftConversation: ImageConversation = {
       id: conversationId,
       title: buildConversationTitle(prompt),
       prompt,
       model: imageModel,
+      mode: imageMode,
+      referenceImage,
       count: parsedCount,
       images: Array.from({ length: parsedCount }, (_, index) => ({
         id: `${conversationId}-${index}`,
-        status: "loading" as const,
+        status: "loading",
       })),
       createdAt: now,
       status: "generating",
@@ -297,14 +350,17 @@ export default function ImagePage() {
 
     addGeneratingId(conversationId);
     setSelectedConversationId(conversationId);
-    setImagePrompt("");
+    resetComposer();
 
     try {
       await persistConversation(draftConversation);
 
       const tasks = Array.from({ length: parsedCount }, async (_, index) => {
         try {
-          const data = await generateImage(prompt, imageModel);
+          const data =
+            imageMode === "edit" && referenceImageFile
+              ? await editImage(referenceImageFile, prompt, imageModel)
+              : await generateImage(prompt, imageModel);
           const first = data.data?.[0];
           if (!first?.b64_json) {
             throw new Error(`第 ${index + 1} 张没有返回图片数据`);
@@ -363,14 +419,23 @@ export default function ImagePage() {
       if (failedCount > 0) {
         toast.error(`已完成 ${successCount} 张，另有 ${failedCount} 张未生成成功`);
       } else {
-        toast.success(`已生成 ${successCount} 张图片`);
+        toast.success(imageMode === "edit" ? `已完成 ${successCount} 张图片编辑` : `已生成 ${successCount} 张图片`);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "生成图片失败";
+      const message = error instanceof Error ? error.message : imageMode === "edit" ? "编辑图片失败" : "生成图片失败";
       await persistConversation({
         ...draftConversation,
         status: "error",
         error: message,
+        images: draftConversation.images.map((image) =>
+          image.status === "loading"
+            ? {
+                ...image,
+                status: "error",
+                error: message,
+              }
+            : image,
+        ),
       });
       toast.error(message);
     } finally {
@@ -381,253 +446,53 @@ export default function ImagePage() {
   return (
     <>
       <section className="mx-auto grid h-[calc(100vh-5rem)] min-h-0 w-full max-w-[1380px] grid-cols-1 gap-3 px-3 pb-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <aside className="min-h-0 border-r border-stone-200/70 pr-3">
-          <div className="flex h-full min-h-0 flex-col gap-3 py-2">
-            <div className="flex items-center gap-2">
-              <Button
-                className="h-10 flex-1 rounded-xl bg-stone-950 text-white hover:bg-stone-800"
-                onClick={handleCreateDraft}
-              >
-                <MessageSquarePlus className="size-4" />
-                新建对话
-              </Button>
-              <Button
-                variant="outline"
-                className="h-10 rounded-xl border-stone-200 bg-white/85 px-3 text-stone-600 hover:bg-white"
-                onClick={() => void handleClearHistory()}
-                disabled={conversations.length === 0}
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            </div>
-
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-              {isLoadingHistory ? (
-                <div className="flex items-center gap-2 px-2 py-3 text-sm text-stone-500">
-                  <LoaderCircle className="size-4 animate-spin" />
-                  正在读取会话记录
-                </div>
-              ) : conversations.length === 0 ? (
-                <div className="px-2 py-3 text-sm leading-6 text-stone-500">
-                  还没有图片记录，输入提示词后会在这里显示。
-                </div>
-              ) : (
-                conversations.map((conversation) => {
-                  const active = conversation.id === selectedConversationId;
-                  const generating = generatingIds.has(conversation.id);
-                  return (
-                    <div
-                      key={conversation.id}
-                      className={cn(
-                        "group relative w-full border-l-2 px-3 py-3 text-left transition",
-                        active
-                          ? "border-stone-900 bg-black/[0.03] text-stone-950"
-                          : "border-transparent text-stone-700 hover:border-stone-300 hover:bg-white/40",
-                      )}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setSelectedConversationId(conversation.id)}
-                        className="block w-full pr-8 text-left"
-                      >
-                        <div className="flex items-center gap-1.5 truncate text-sm font-semibold">
-                          {generating && <LoaderCircle className="size-3.5 shrink-0 animate-spin text-stone-400" />}
-                          <span className="truncate">{conversation.title}</span>
-                        </div>
-                        <div className={cn("mt-1 text-xs", active ? "text-stone-500" : "text-stone-400")}>
-                          {formatConversationTime(conversation.createdAt)}
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteConversation(conversation.id)}
-                        className="absolute top-3 right-2 inline-flex size-7 items-center justify-center rounded-md text-stone-400 opacity-0 transition hover:bg-stone-100 hover:text-rose-500 group-hover:opacity-100"
-                        aria-label="删除会话"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </aside>
+        <ImageSidebar
+          conversations={conversations}
+          isLoadingHistory={isLoadingHistory}
+          generatingIds={generatingIds}
+          selectedConversationId={selectedConversationId}
+          onCreateDraft={handleCreateDraft}
+          onClearHistory={handleClearHistory}
+          onSelectConversation={setSelectedConversationId}
+          onDeleteConversation={handleDeleteConversation}
+          formatConversationTime={formatConversationTime}
+        />
 
         <div className="flex min-h-0 flex-col gap-4">
           <div
             ref={resultsViewportRef}
             className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-3 sm:px-4 sm:py-4"
           >
-            {!selectedConversation ? (
-              <div className="flex h-full min-h-[420px] items-center justify-center text-center">
-                <div className="w-full max-w-4xl">
-                  <h1
-                    className="text-3xl font-semibold tracking-tight text-stone-950 md:text-5xl"
-                    style={{
-                      fontFamily: '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
-                    }}
-                  >
-                    Turn ideas into images
-
-                  </h1>
-                  <p
-                    className="mt-4 text-[15px] italic tracking-[0.01em] text-stone-500"
-                    style={{
-                      fontFamily: '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
-                    }}
-                  >
-                    Describe a scene, a mood, or a character, and let the next image start here.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="mx-auto flex w-full max-w-[980px] flex-col gap-5">
-                <div className="flex justify-end">
-                  <div className="max-w-[80%] px-1 pt-1 text-right text-[15px] leading-8 text-stone-700">
-                    {selectedConversation.prompt}
-                  </div>
-                </div>
-
-                <div className="flex justify-start">
-                  <div className="w-full p-1">
-                    <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-stone-500">
-                      <span className="rounded-full bg-stone-100 px-3 py-1">{selectedConversation.model}</span>
-                      <span className="rounded-full bg-stone-100 px-3 py-1">{selectedConversation.count} 张</span>
-                      <span className="rounded-full bg-stone-100 px-3 py-1">
-                        {formatConversationTime(selectedConversation.createdAt)}
-                      </span>
-                    </div>
-
-                    {selectedConversation.status === "error" && selectedConversation.images.length === 0 ? (
-                      <div className="border-l-2 border-rose-300 bg-rose-50/70 px-4 py-4 text-sm leading-6 text-rose-600">
-                        {selectedConversation.error || "生成失败"}
-                      </div>
-                    ) : null}
-
-                    {selectedConversation.images.length > 0 ? (
-                      <div className="columns-1 gap-4 space-y-4 sm:columns-2 xl:columns-3">
-                        {selectedConversation.images.map((image, index) => (
-                          <div key={image.id} className="break-inside-avoid overflow-hidden rounded-[22px]">
-                            {image.status === "success" && image.b64_json ? (
-                              <button
-                                type="button"
-                                onClick={() => openLightbox(image.id)}
-                                className="group block w-full cursor-zoom-in"
-                              >
-                                <Image
-                                  src={`data:image/png;base64,${image.b64_json}`}
-                                  alt={`Generated result ${index + 1}`}
-                                  width={1024}
-                                  height={1024}
-                                  unoptimized
-                                  className="block h-auto w-full transition duration-200 group-hover:brightness-90"
-                                />
-                              </button>
-                            ) : image.status === "error" ? (
-                              <div className="flex min-h-[320px] items-center justify-center bg-rose-50 px-6 py-8 text-center text-sm leading-6 text-rose-600">
-                                {image.error || "生成失败"}
-                              </div>
-                            ) : (
-                              <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 bg-stone-100/80 px-6 py-8 text-center text-stone-500">
-                                <div className="rounded-full bg-white p-3 shadow-sm">
-                                  <LoaderCircle className="size-5 animate-spin" />
-                                </div>
-                                <p className="text-sm">正在生成图片...</p>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {selectedConversation.status === "error" && selectedConversation.images.length > 0 ? (
-                      <div className="mt-4 border-l-2 border-amber-300 bg-amber-50/70 px-4 py-3 text-sm leading-6 text-amber-700">
-                        {selectedConversation.error}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            )}
+            <ImageResults
+              selectedConversation={selectedConversation}
+              isSelectedGenerating={isSelectedGenerating}
+              openLightbox={openLightbox}
+              formatConversationTime={formatConversationTime}
+            />
           </div>
 
-          <div className="shrink-0 flex justify-center">
-            <div
-              className="overflow-hidden rounded-[32px] border border-stone-200/80 bg-white shadow-[0_18px_48px_rgba(28,25,23,0.08)]"
-              style={{ width: "min(980px, 100%)" }}
-            >
-              <div
-                className="relative cursor-text"
-                onClick={() => {
-                  textareaRef.current?.focus();
-                }}
-              >
-                <Textarea
-                  ref={textareaRef}
-                  value={imagePrompt}
-                  onChange={(event) => setImagePrompt(event.target.value)}
-                  placeholder="输入你想要生成的画面"
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      void handleGenerateImage();
-                    }
-                  }}
-                  className="min-h-[148px] resize-none rounded-[32px] border-0 bg-transparent px-6 pt-6 pb-20 text-[15px] leading-7 text-stone-900 shadow-none placeholder:text-stone-400 focus-visible:ring-0"
-                />
-
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-white via-white/95 to-transparent px-4 pb-4 pt-10 sm:px-6">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-full bg-stone-100 px-3 py-2 text-xs font-medium text-stone-600">
-                      剩余额度 {availableQuota}
-                    </div>
-                    {hasAnyGenerating && (
-                      <div className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-                        <LoaderCircle className="size-3 animate-spin" />
-                        {generatingIds.size} 个任务进行中
-                      </div>
-                    )}
-                    <Select value={imageModel} onValueChange={(value) => setImageModel(value as ImageModel)}>
-                      <SelectTrigger className="h-10 w-[164px] rounded-full border-stone-200 bg-white text-sm font-medium text-stone-700 shadow-none focus-visible:ring-0">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {imageModelOptions.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>
-                            {item.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    <div className="flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1">
-                      <span className="text-sm font-medium text-stone-700">张数</span>
-                      <Input
-                        type="number"
-                        min="1"
-                        max="10"
-                        step="1"
-                        value={imageCount}
-                        onChange={(event) => setImageCount(event.target.value)}
-                        className="h-8 w-[64px] border-0 bg-transparent px-0 text-center text-sm font-medium text-stone-700 shadow-none focus-visible:ring-0"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => void handleGenerateImage()}
-                    disabled={!imagePrompt.trim()}
-                    className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-stone-950 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300"
-                    aria-label="生成图片"
-                  >
-                    <ArrowUp className="size-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ImageComposer
+            mode={imageMode}
+            prompt={imagePrompt}
+            model={imageModel}
+            imageCount={imageCount}
+            availableQuota={availableQuota}
+            hasAnyGenerating={hasAnyGenerating}
+            generatingCount={generatingIds.size}
+            referenceImageName={referenceImageFile?.name ?? null}
+            referenceImagePreview={referenceImagePreview}
+            textareaRef={textareaRef}
+            fileInputRef={fileInputRef}
+            imageModelOptions={imageModelOptions}
+            onModeChange={setImageMode}
+            onPromptChange={setImagePrompt}
+            onModelChange={setImageModel}
+            onImageCountChange={setImageCount}
+            onSubmit={handleGenerateImage}
+            onPickReferenceImage={() => fileInputRef.current?.click()}
+            onReferenceImageChange={handleReferenceImageChange}
+            onClearReferenceImage={() => void handleReferenceImageChange(null)}
+          />
         </div>
       </section>
 

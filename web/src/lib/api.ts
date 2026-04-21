@@ -117,6 +117,22 @@ export async function generateImage(prompt: string, model: ImageModel = "gpt-ima
   );
 }
 
+export async function editImage(file: File, prompt: string, model: ImageModel = "gpt-image-1") {
+  const formData = new FormData();
+  formData.append("image", file);
+  formData.append("prompt", prompt);
+  formData.append("model", model);
+  formData.append("n", "1");
+
+  return httpRequest<{ created: number; data: Array<{ b64_json: string; revised_prompt?: string }> }>(
+    "/v1/images/edits",
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+}
+
 // ── CPA (CLIProxyAPI) ──────────────────────────────────────────────
 
 export type CPAPool = {

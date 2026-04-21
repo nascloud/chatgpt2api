@@ -87,6 +87,49 @@ def extract_prompt_from_message_content(content: object) -> str:
     return "\n".join(parts).strip()
 
 
+def extract_image_from_message_content(content: object) -> tuple[bytes, str] | None:
+    import base64 as b64
+
+    if not isinstance(content, list):
+        return None
+
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        item_type = str(item.get("type") or "").strip()
+        if item_type == "image_url":
+            url_obj = item.get("image_url") or item
+            url = str(url_obj.get("url") or "") if isinstance(url_obj, dict) else str(url_obj)
+            if url.startswith("data:"):
+                header, _, data = url.partition(",")
+                mime = header.split(";")[0].removeprefix("data:")
+                return b64.b64decode(data), mime or "image/png"
+        if item_type == "input_image":
+            image_url = str(item.get("image_url") or "")
+            if image_url.startswith("data:"):
+                header, _, data = image_url.partition(",")
+                mime = header.split(";")[0].removeprefix("data:")
+                return b64.b64decode(data), mime or "image/png"
+    return None
+
+
+def extract_chat_image(body: dict[str, object]) -> tuple[bytes, str] | None:
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return None
+
+    for message in reversed(messages):
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").strip().lower()
+        if role != "user":
+            continue
+        result = extract_image_from_message_content(message.get("content"))
+        if result:
+            return result
+    return None
+
+
 def extract_chat_prompt(body: dict[str, object]) -> str:
     direct_prompt = str(body.get("prompt") or "").strip()
     if direct_prompt:

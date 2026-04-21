@@ -4,6 +4,14 @@ import localforage from "localforage";
 
 import type { ImageModel } from "@/lib/api";
 
+export type ImageConversationMode = "generate" | "edit";
+
+export type StoredReferenceImage = {
+  name: string;
+  type: string;
+  dataUrl: string;
+};
+
 export type StoredImage = {
   id: string;
   status?: "loading" | "success" | "error";
@@ -18,6 +26,8 @@ export type ImageConversation = {
   title: string;
   prompt: string;
   model: ImageModel;
+  mode?: ImageConversationMode;
+  referenceImage?: StoredReferenceImage;
   count: number;
   images: StoredImage[];
   createdAt: string;
@@ -45,6 +55,7 @@ function normalizeStoredImage(image: StoredImage): StoredImage {
 function normalizeConversation(conversation: ImageConversation): ImageConversation {
   return {
     ...conversation,
+    mode: conversation.mode === "edit" ? "edit" : "generate",
     images: (conversation.images || []).map(normalizeStoredImage),
   };
 }
