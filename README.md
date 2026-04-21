@@ -70,6 +70,8 @@ POST /v1/responses
 
 ## 部署
 
+已发布镜像支持 `linux/amd64` 与 `linux/arm64`，在 x86 服务器和 Apple Silicon / ARM Linux 设备上都会自动拉取匹配架构的版本。
+
 ```bash
 git clone git@github.com:basketikun/chatgpt2api.git
 # 首次启动会自动生成 config.json，也可以手动复制后修改
@@ -77,6 +79,8 @@ git clone git@github.com:basketikun/chatgpt2api.git
 # 可按需编辑 config.json 的密钥和 `refresh_account_interval_minute`
 docker compose up -d
 ```
+
+如果之前在宿主机上没有 `config.json` 就直接执行了 `docker compose up -d`，Docker 可能会错误地创建一个 `config.json/` 目录。遇到这种情况请先删除这个目录，再重新创建 `config.json` 文件后启动。
 
 ## 社区支持
 学 AI , 上 L 站

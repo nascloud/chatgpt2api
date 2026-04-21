@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -22,6 +23,19 @@ class AppSettings:
     accounts_file: Path
     refresh_account_interval_minute: int
 
+
+def _readable_json_file(path: Path, *, name: str) -> Path | None:
+    if not path.exists():
+        return None
+    if path.is_dir():
+        print(
+            f"Warning: {name} at '{path}' is a directory, ignoring it and falling back to other configuration sources.",
+            file=sys.stderr,
+        )
+        return None
+    return path
+
+
 def _load_json_object(path: Path, *, name: str) -> dict[str, object]:
     text = path.read_text(encoding="utf-8").strip()
     if not text:
@@ -36,9 +50,10 @@ def _load_json_object(path: Path, *, name: str) -> dict[str, object]:
 def _ensure_config_file() -> None:
     if CONFIG_FILE.exists():
         return
-    if not CONFIG_EXAMPLE_FILE.exists():
+    example_file = _readable_json_file(CONFIG_EXAMPLE_FILE, name="config.example.json")
+    if example_file is None:
         return
-    shutil.copyfile(CONFIG_EXAMPLE_FILE, CONFIG_FILE)
+    shutil.copyfile(example_file, CONFIG_FILE)
 
 
 def _load_settings() -> AppSettings:
@@ -46,10 +61,13 @@ def _load_settings() -> AppSettings:
     _ensure_config_file()
 
     raw_config: dict[str, object] = {}
-    if CONFIG_EXAMPLE_FILE.exists():
-        raw_config.update(_load_json_object(CONFIG_EXAMPLE_FILE, name="config.example.json"))
-    if CONFIG_FILE.exists():
-        raw_config.update(_load_json_object(CONFIG_FILE, name="config.json"))
+    example_file = _readable_json_file(CONFIG_EXAMPLE_FILE, name="config.example.json")
+    if example_file is not None:
+        raw_config.update(_load_json_object(example_file, name="config.example.json"))
+
+    config_file = _readable_json_file(CONFIG_FILE, name="config.json")
+    if config_file is not None:
+        raw_config.update(_load_json_object(config_file, name="config.json"))
 
     auth_key = str(os.getenv("CHATGPT2API_AUTH_KEY") or raw_config.get("auth-key") or "").strip()
     if not auth_key:

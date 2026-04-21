@@ -1,4 +1,8 @@
-FROM node:22-alpine AS web-build
+ARG BUILDPLATFORM
+ARG TARGETPLATFORM
+ARG TARGETARCH
+
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web-build
 
 WORKDIR /app/web
 
@@ -10,7 +14,10 @@ COPY web ./
 RUN NEXT_PUBLIC_APP_VERSION="$(cat /app/VERSION)" npm run build
 
 
-FROM python:3.13-slim AS app
+FROM --platform=$TARGETPLATFORM python:3.13-slim AS app
+
+ARG TARGETPLATFORM
+ARG TARGETARCH
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -24,6 +31,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY main.py ./
+COPY config.example.json ./
 COPY VERSION ./
 COPY services ./services
 COPY --from=web-build /app/web/out ./web_dist
