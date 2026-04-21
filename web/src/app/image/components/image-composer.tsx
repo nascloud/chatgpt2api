@@ -1,7 +1,8 @@
 "use client";
 import { ArrowUp, ImagePlus, LoaderCircle, X } from "lucide-react";
-import type { RefObject } from "react";
+import { useMemo, useState, type RefObject } from "react";
 
+import { ImageLightbox } from "@/components/image-lightbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -35,7 +36,7 @@ type ImageComposerProps = {
   onSubmit: () => void | Promise<void>;
   onPickReferenceImage: () => void;
   onReferenceImageChange: (files: File[]) => void | Promise<void>;
-  onClearReferenceImages: () => void;
+  onRemoveReferenceImage: (index: number) => void;
 };
 
 export function ImageComposer({
@@ -57,8 +58,15 @@ export function ImageComposer({
   onSubmit,
   onPickReferenceImage,
   onReferenceImageChange,
-  onClearReferenceImages,
+  onRemoveReferenceImage,
 }: ImageComposerProps) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const lightboxImages = useMemo(
+    () => referenceImages.map((image, index) => ({ id: `${image.name}-${index}`, src: image.dataUrl })),
+    [referenceImages],
+  );
+
   return (
     <div className="shrink-0 flex justify-center">
       <div style={{ width: "min(980px, 100%)" }}>
@@ -76,44 +84,54 @@ export function ImageComposer({
         )}
 
         {mode === "edit" && referenceImages.length > 0 ? (
-          <div className="mb-3 rounded-[28px] border border-stone-200/80 bg-white px-4 py-4 shadow-[0_18px_48px_rgba(28,25,23,0.08)]">
-            <div className="mb-3 flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-stone-800">已选择 {referenceImages.length} 张参考图</div>
-                <div className="text-xs text-stone-500">将基于这些图片进行编辑</div>
-              </div>
-              <button
-                type="button"
-                onClick={onClearReferenceImages}
-                className="inline-flex size-8 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
-                aria-label="移除参考图"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {referenceImages.map((image, index) => (
-                <div key={`${image.name}-${index}`} className="overflow-hidden rounded-2xl border border-stone-200 bg-stone-50">
+          <div className="mb-3 flex flex-wrap gap-2 px-1">
+            {referenceImages.map((image, index) => (
+              <div key={`${image.name}-${index}`} className="relative size-16">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLightboxIndex(index);
+                    setLightboxOpen(true);
+                  }}
+                  className="group size-16 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 transition hover:border-stone-300"
+                  aria-label={`预览参考图 ${image.name || index + 1}`}
+                >
                   <img
                     src={image.dataUrl}
                     alt={image.name || `参考图 ${index + 1}`}
-                    className="h-24 w-full object-cover"
+                    className="h-full w-full object-cover"
                   />
-                  <div className="truncate px-3 py-2 text-xs text-stone-600">{image.name}</div>
-                </div>
-              ))}
-            </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemoveReferenceImage(index);
+                  }}
+                  className="absolute -right-1 -top-1 inline-flex size-5 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition hover:border-stone-300 hover:text-stone-800"
+                  aria-label={`移除参考图 ${image.name || index + 1}`}
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            ))}
           </div>
         ) : null}
 
-        <div className="overflow-hidden rounded-[32px] border border-stone-200/80 bg-white shadow-[0_18px_48px_rgba(28,25,23,0.08)]">
+        <div className="overflow-hidden rounded-[32px] border border-stone-200 bg-white">
           <div
             className="relative cursor-text"
             onClick={() => {
               textareaRef.current?.focus();
             }}
           >
+            <ImageLightbox
+              images={lightboxImages}
+              currentIndex={lightboxIndex}
+              open={lightboxOpen}
+              onOpenChange={setLightboxOpen}
+              onIndexChange={setLightboxIndex}
+            />
             <Textarea
               ref={textareaRef}
               value={prompt}
@@ -129,22 +147,19 @@ export function ImageComposer({
             />
 
             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-white via-white/95 to-transparent px-4 pb-4 pt-6 sm:px-6">
-              {mode === "edit" && (
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-10 rounded-full border-stone-200 bg-white px-4 text-sm font-medium text-stone-700 shadow-none"
-                    onClick={onPickReferenceImage}
-                  >
-                    <ImagePlus className="size-4" />
-                    {referenceImages.length > 0 ? "重新上传参考图" : "上传参考图"}
-                  </Button>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-end justify-between gap-3">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+                  {mode === "edit" && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-10 rounded-full border-stone-200 bg-white px-4 text-sm font-medium text-stone-700 shadow-none"
+                      onClick={onPickReferenceImage}
+                    >
+                      <ImagePlus className="size-4" />
+                      {referenceImages.length > 0 ? "继续添加参考图" : "上传参考图"}
+                    </Button>
+                  )}
                   <div className="rounded-full bg-stone-100 px-3 py-2 text-xs font-medium text-stone-600">剩余额度 {availableQuota}</div>
                   {hasAnyGenerating && (
                     <div className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">

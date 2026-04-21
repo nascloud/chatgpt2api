@@ -315,6 +315,17 @@ export default function ImagePage() {
     }
   }, []);
 
+  const handleRemoveReferenceImage = useCallback((index: number) => {
+    setReferenceImageFiles((prev) => {
+      const next = prev.filter((_, currentIndex) => currentIndex !== index);
+      if (next.length === 0 && fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return next;
+    });
+    setReferenceImages((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+  }, []);
+
   const handleGenerateImage = async () => {
     const prompt = imagePrompt.trim();
     if (!prompt) {
@@ -489,7 +500,7 @@ export default function ImagePage() {
             onSubmit={handleGenerateImage}
             onPickReferenceImage={() => fileInputRef.current?.click()}
             onReferenceImageChange={handleReferenceImageChange}
-            onClearReferenceImages={() => void handleReferenceImageChange([])}
+            onRemoveReferenceImage={handleRemoveReferenceImage}
           />
         </div>
       </section>
