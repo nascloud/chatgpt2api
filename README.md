@@ -74,6 +74,8 @@ git clone git@github.com:basketikun/chatgpt2api.git
 docker compose up -d
 ```
 
+如果之前在宿主机上没有 `config.json` 就直接执行了 `docker compose up -d`，Docker 可能会错误地创建一个 `config.json/` 目录。遇到这种情况请先删除这个目录，再重新创建 `config.json` 文件后启动。
+
 ## 社区支持
 学 AI , 上 L 站
 
