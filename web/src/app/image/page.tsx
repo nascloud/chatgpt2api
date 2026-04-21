@@ -106,8 +106,8 @@ export default function ImagePage() {
   const [imageCount, setImageCount] = useState("1");
   const [imageMode, setImageMode] = useState<ImageConversationMode>("generate");
   const [imageModel, setImageModel] = useState<ImageModel>("gpt-image-1");
-  const [referenceImageFile, setReferenceImageFile] = useState<File | null>(null);
-  const [referenceImagePreview, setReferenceImagePreview] = useState<string | null>(null);
+  const [referenceImageFiles, setReferenceImageFiles] = useState<File[]>([]);
+  const [referenceImages, setReferenceImages] = useState<StoredReferenceImage[]>([]);
   const [conversations, setConversations] = useState<ImageConversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
@@ -252,8 +252,8 @@ export default function ImagePage() {
   const resetComposer = useCallback(() => {
     setImagePrompt("");
     setImageCount("1");
-    setReferenceImageFile(null);
-    setReferenceImagePreview(null);
+    setReferenceImageFiles([]);
+    setReferenceImages([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -292,17 +292,23 @@ export default function ImagePage() {
     }
   };
 
-  const handleReferenceImageChange = useCallback(async (file: File | null) => {
-    if (!file) {
-      setReferenceImageFile(null);
-      setReferenceImagePreview(null);
+  const handleReferenceImageChange = useCallback(async (files: File[]) => {
+    if (files.length === 0) {
+      setReferenceImageFiles([]);
+      setReferenceImages([]);
       return;
     }
 
     try {
-      const preview = await readFileAsDataUrl(file);
-      setReferenceImageFile(file);
-      setReferenceImagePreview(preview);
+      const previews = await Promise.all(
+        files.map(async (file) => ({
+          name: file.name,
+          type: file.type || "image/png",
+          dataUrl: await readFileAsDataUrl(file),
+        })),
+      );
+      setReferenceImageFiles(files);
+      setReferenceImages(previews);
     } catch (error) {
       const message = error instanceof Error ? error.message : "读取参考图失败";
       toast.error(message);
@@ -316,21 +322,14 @@ export default function ImagePage() {
       return;
     }
 
-    if (imageMode === "edit" && !referenceImageFile) {
+    if (imageMode === "edit" && referenceImageFiles.length === 0) {
       toast.error("请先上传参考图");
       return;
     }
 
     const now = new Date().toISOString();
     const conversationId = createId();
-    const referenceImage: StoredReferenceImage | undefined =
-      imageMode === "edit" && referenceImageFile && referenceImagePreview
-        ? {
-            name: referenceImageFile.name,
-            type: referenceImageFile.type || "image/png",
-            dataUrl: referenceImagePreview,
-          }
-        : undefined;
+    const draftReferenceImages = imageMode === "edit" ? referenceImages : [];
 
     const draftConversation: ImageConversation = {
       id: conversationId,
@@ -338,7 +337,7 @@ export default function ImagePage() {
       prompt,
       model: imageModel,
       mode: imageMode,
-      referenceImage,
+      referenceImages: draftReferenceImages,
       count: parsedCount,
       images: Array.from({ length: parsedCount }, (_, index) => ({
         id: `${conversationId}-${index}`,
@@ -358,8 +357,8 @@ export default function ImagePage() {
       const tasks = Array.from({ length: parsedCount }, async (_, index) => {
         try {
           const data =
-            imageMode === "edit" && referenceImageFile
-              ? await editImage(referenceImageFile, prompt, imageModel)
+            imageMode === "edit" && referenceImageFiles.length > 0
+              ? await editImage(referenceImageFiles, prompt, imageModel)
               : await generateImage(prompt, imageModel);
           const first = data.data?.[0];
           if (!first?.b64_json) {
@@ -479,8 +478,7 @@ export default function ImagePage() {
             availableQuota={availableQuota}
             hasAnyGenerating={hasAnyGenerating}
             generatingCount={generatingIds.size}
-            referenceImageName={referenceImageFile?.name ?? null}
-            referenceImagePreview={referenceImagePreview}
+            referenceImages={referenceImages}
             textareaRef={textareaRef}
             fileInputRef={fileInputRef}
             imageModelOptions={imageModelOptions}
@@ -491,7 +489,7 @@ export default function ImagePage() {
             onSubmit={handleGenerateImage}
             onPickReferenceImage={() => fileInputRef.current?.click()}
             onReferenceImageChange={handleReferenceImageChange}
-            onClearReferenceImage={() => void handleReferenceImageChange(null)}
+            onClearReferenceImages={() => void handleReferenceImageChange([])}
           />
         </div>
       </section>

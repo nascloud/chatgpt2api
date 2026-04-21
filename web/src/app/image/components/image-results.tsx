@@ -45,13 +45,20 @@ export function ImageResults({
     <div className="mx-auto flex w-full max-w-[980px] flex-col gap-5">
       <div className="flex justify-end">
         <div className="flex w-full max-w-[80%] flex-col items-end gap-3 px-1 pt-1">
-          {selectedConversation.referenceImage ? (
-            <div className="w-full max-w-[240px] overflow-hidden rounded-[20px] border border-stone-200 bg-white shadow-sm">
-              <img
-                src={selectedConversation.referenceImage.dataUrl}
-                alt="参考图"
-                className="block h-auto w-full"
-              />
+          {selectedConversation.referenceImages?.length ? (
+            <div className="grid w-full max-w-[520px] grid-cols-2 gap-3 sm:grid-cols-3">
+              {selectedConversation.referenceImages.map((image, index) => (
+                <div
+                  key={`${image.name}-${index}`}
+                  className="overflow-hidden rounded-[20px] border border-stone-200 bg-white shadow-sm"
+                >
+                  <img
+                    src={image.dataUrl}
+                    alt={image.name || `参考图 ${index + 1}`}
+                    className="block h-auto w-full"
+                  />
+                </div>
+              ))}
             </div>
           ) : null}
           <div className="text-right text-[15px] leading-8 text-stone-700">{selectedConversation.prompt}</div>

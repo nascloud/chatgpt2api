@@ -27,7 +27,7 @@ export type ImageConversation = {
   prompt: string;
   model: ImageModel;
   mode?: ImageConversationMode;
-  referenceImage?: StoredReferenceImage;
+  referenceImages?: StoredReferenceImage[];
   count: number;
   images: StoredImage[];
   createdAt: string;

@@ -24,8 +24,7 @@ type ImageComposerProps = {
   availableQuota: string;
   hasAnyGenerating: boolean;
   generatingCount: number;
-  referenceImageName: string | null;
-  referenceImagePreview: string | null;
+  referenceImages: Array<{ name: string; dataUrl: string }>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   fileInputRef: RefObject<HTMLInputElement | null>;
   imageModelOptions: Array<{ label: string; value: ImageModel }>;
@@ -35,8 +34,8 @@ type ImageComposerProps = {
   onImageCountChange: (value: string) => void;
   onSubmit: () => void | Promise<void>;
   onPickReferenceImage: () => void;
-  onReferenceImageChange: (file: File | null) => void | Promise<void>;
-  onClearReferenceImage: () => void;
+  onReferenceImageChange: (files: File[]) => void | Promise<void>;
+  onClearReferenceImages: () => void;
 };
 
 export function ImageComposer({
@@ -47,8 +46,7 @@ export function ImageComposer({
   availableQuota,
   hasAnyGenerating,
   generatingCount,
-  referenceImageName,
-  referenceImagePreview,
+  referenceImages,
   textareaRef,
   fileInputRef,
   imageModelOptions,
@@ -59,7 +57,7 @@ export function ImageComposer({
   onSubmit,
   onPickReferenceImage,
   onReferenceImageChange,
-  onClearReferenceImage,
+  onClearReferenceImages,
 }: ImageComposerProps) {
   return (
     <div className="shrink-0 flex justify-center">
@@ -69,32 +67,43 @@ export function ImageComposer({
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            multiple
             className="hidden"
             onChange={(event) => {
-              void onReferenceImageChange(event.target.files?.[0] ?? null);
+              void onReferenceImageChange(Array.from(event.target.files || []));
             }}
           />
         )}
 
-        {mode === "edit" && referenceImagePreview ? (
-          <div className="mb-3 flex items-center gap-3 rounded-[28px] border border-stone-200/80 bg-white px-4 py-4 shadow-[0_18px_48px_rgba(28,25,23,0.08)]">
-            <img
-              src={referenceImagePreview}
-              alt={referenceImageName || "参考图预览"}
-              className="h-14 w-14 rounded-xl object-cover"
-            />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-stone-800">{referenceImageName}</div>
-              <div className="text-xs text-stone-500">将基于这张图片进行编辑</div>
+        {mode === "edit" && referenceImages.length > 0 ? (
+          <div className="mb-3 rounded-[28px] border border-stone-200/80 bg-white px-4 py-4 shadow-[0_18px_48px_rgba(28,25,23,0.08)]">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-stone-800">已选择 {referenceImages.length} 张参考图</div>
+                <div className="text-xs text-stone-500">将基于这些图片进行编辑</div>
+              </div>
+              <button
+                type="button"
+                onClick={onClearReferenceImages}
+                className="inline-flex size-8 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+                aria-label="移除参考图"
+              >
+                <X className="size-4" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={onClearReferenceImage}
-              className="inline-flex size-8 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
-              aria-label="移除参考图"
-            >
-              <X className="size-4" />
-            </button>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {referenceImages.map((image, index) => (
+                <div key={`${image.name}-${index}`} className="overflow-hidden rounded-2xl border border-stone-200 bg-stone-50">
+                  <img
+                    src={image.dataUrl}
+                    alt={image.name || `参考图 ${index + 1}`}
+                    className="h-24 w-full object-cover"
+                  />
+                  <div className="truncate px-3 py-2 text-xs text-stone-600">{image.name}</div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
 
@@ -129,7 +138,7 @@ export function ImageComposer({
                     onClick={onPickReferenceImage}
                   >
                     <ImagePlus className="size-4" />
-                    {referenceImageName ? "重新上传参考图" : "上传参考图"}
+                    {referenceImages.length > 0 ? "重新上传参考图" : "上传参考图"}
                   </Button>
                 </div>
               )}
@@ -180,7 +189,7 @@ export function ImageComposer({
                 <button
                   type="button"
                   onClick={() => void onSubmit()}
-                  disabled={!prompt.trim() || (mode === "edit" && !referenceImagePreview)}
+                  disabled={!prompt.trim() || (mode === "edit" && referenceImages.length === 0)}
                   className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-stone-950 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300"
                   aria-label={mode === "edit" ? "编辑图片" : "生成图片"}
                 >

@@ -117,9 +117,13 @@ export async function generateImage(prompt: string, model: ImageModel = "gpt-ima
   );
 }
 
-export async function editImage(file: File, prompt: string, model: ImageModel = "gpt-image-1") {
+export async function editImage(files: File | File[], prompt: string, model: ImageModel = "gpt-image-1") {
   const formData = new FormData();
-  formData.append("image", file);
+  const uploadFiles = Array.isArray(files) ? files : [files];
+
+  uploadFiles.forEach((file) => {
+    formData.append("image", file);
+  });
   formData.append("prompt", prompt);
   formData.append("model", model);
   formData.append("n", "1");

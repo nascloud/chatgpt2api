@@ -282,8 +282,7 @@ def create_app() -> FastAPI:
     @router.post("/v1/images/edits")
     async def edit_images(
             authorization: str | None = Header(default=None),
-            image: UploadFile | None = File(default=None),
-            image_list: list[UploadFile] | None = File(default=None, alias="image[]"),
+            image: list[UploadFile] = File(...),
             prompt: str = Form(...),
             model: str = Form(default="gpt-image-1"),
             n: int = Form(default=1),
@@ -292,17 +291,8 @@ def create_app() -> FastAPI:
         if n < 1 or n > 4:
             raise HTTPException(status_code=400, detail={"error": "n must be between 1 and 4"})
 
-        uploads: list[UploadFile] = []
-        if image is not None:
-            uploads.append(image)
-        if image_list:
-            uploads.extend(upload for upload in image_list if upload is not None)
-
-        if not uploads:
-            raise HTTPException(status_code=400, detail={"error": "image file is required"})
-
         images: list[tuple[bytes, str, str]] = []
-        for upload in uploads:
+        for upload in image:
             image_data = await upload.read()
             if not image_data:
                 raise HTTPException(status_code=400, detail={"error": "image file is empty"})
