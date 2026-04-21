@@ -292,10 +292,8 @@ export default function ImagePage() {
     }
   };
 
-  const handleReferenceImageChange = useCallback(async (files: File[]) => {
+  const appendReferenceImages = useCallback(async (files: File[]) => {
     if (files.length === 0) {
-      setReferenceImageFiles([]);
-      setReferenceImages([]);
       return;
     }
 
@@ -307,13 +305,26 @@ export default function ImagePage() {
           dataUrl: await readFileAsDataUrl(file),
         })),
       );
-      setReferenceImageFiles(files);
-      setReferenceImages(previews);
+      setReferenceImageFiles((prev) => [...prev, ...files]);
+      setReferenceImages((prev) => [...prev, ...previews]);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "读取参考图失败";
       toast.error(message);
     }
   }, []);
+
+  const handleReferenceImageChange = useCallback(async (files: File[]) => {
+    if (files.length === 0) {
+      setReferenceImageFiles([]);
+      setReferenceImages([]);
+      return;
+    }
+
+    await appendReferenceImages(files);
+  }, [appendReferenceImages]);
 
   const handleRemoveReferenceImage = useCallback((index: number) => {
     setReferenceImageFiles((prev) => {

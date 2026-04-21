@@ -1,6 +1,8 @@
 "use client";
 import { LoaderCircle } from "lucide-react";
+import { useMemo, useState } from "react";
 
+import { ImageLightbox } from "@/components/image-lightbox";
 import type { ImageConversation, StoredImage } from "@/store/image-conversations";
 
 type ImageResultsProps = {
@@ -16,6 +18,18 @@ export function ImageResults({
   openLightbox,
   formatConversationTime,
 }: ImageResultsProps) {
+  const [referenceLightboxOpen, setReferenceLightboxOpen] = useState(false);
+  const [referenceLightboxIndex, setReferenceLightboxIndex] = useState(0);
+
+  const referenceLightboxImages = useMemo(
+    () =>
+      (selectedConversation?.referenceImages ?? []).map((image, index) => ({
+        id: `${image.name}-${index}`,
+        src: image.dataUrl,
+      })),
+    [selectedConversation?.referenceImages],
+  );
+
   if (!selectedConversation) {
     return (
       <div className="flex h-full min-h-[420px] items-center justify-center text-center">
@@ -42,26 +56,49 @@ export function ImageResults({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[980px] flex-col gap-5">
+    <div className="mx-auto flex w-full max-w-[980px] flex-col gap-4">
+      <ImageLightbox
+        images={referenceLightboxImages}
+        currentIndex={referenceLightboxIndex}
+        open={referenceLightboxOpen}
+        onOpenChange={setReferenceLightboxOpen}
+        onIndexChange={setReferenceLightboxIndex}
+      />
+
       <div className="flex justify-end">
-        <div className="flex w-full max-w-[80%] flex-col items-end gap-3 px-1 pt-1">
-          {selectedConversation.referenceImages?.length ? (
-            <div className="grid w-full max-w-[520px] grid-cols-2 gap-3 sm:grid-cols-3">
-              {selectedConversation.referenceImages.map((image, index) => (
-                <div
-                  key={`${image.name}-${index}`}
-                  className="overflow-hidden rounded-[20px] border border-stone-200 bg-white shadow-sm"
-                >
-                  <img
-                    src={image.dataUrl}
-                    alt={image.name || `参考图 ${index + 1}`}
-                    className="block h-auto w-full"
-                  />
-                </div>
-              ))}
+        <div className="w-full max-w-[min(820px,92%)] px-1 pt-1">
+          <div className="ml-auto flex max-w-full flex-col items-end gap-2.5 text-right">
+            <div className="w-fit max-w-[min(32rem,100%)] whitespace-pre-wrap break-words text-[15px] leading-6 text-stone-700 sm:leading-7">
+              {selectedConversation.prompt}
             </div>
-          ) : null}
-          <div className="text-right text-[15px] leading-8 text-stone-700">{selectedConversation.prompt}</div>
+            {selectedConversation.referenceImages?.length ? (
+              <div
+                className="grid w-fit auto-rows-fr gap-3"
+                style={{
+                  gridTemplateColumns: `repeat(${Math.min(selectedConversation.referenceImages.length, 3)}, minmax(0, 1fr))`,
+                }}
+              >
+                {selectedConversation.referenceImages.map((image, index) => (
+                  <button
+                    key={`${image.name}-${index}`}
+                    type="button"
+                    onClick={() => {
+                      setReferenceLightboxIndex(index);
+                      setReferenceLightboxOpen(true);
+                    }}
+                    className="group relative aspect-square min-h-[112px] overflow-hidden rounded-[18px] border border-stone-200/80 bg-stone-100/60 text-left transition hover:border-stone-300 sm:min-h-[136px]"
+                    aria-label={`预览参考图 ${image.name || index + 1}`}
+                  >
+                    <img
+                      src={image.dataUrl}
+                      alt={image.name || `参考图 ${index + 1}`}
+                      className="absolute inset-0 h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                    />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 

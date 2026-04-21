@@ -1,6 +1,6 @@
 "use client";
 import { ArrowUp, ImagePlus, LoaderCircle, X } from "lucide-react";
-import { useMemo, useState, type RefObject } from "react";
+import { useMemo, useState, type ClipboardEvent, type RefObject } from "react";
 
 import { ImageLightbox } from "@/components/image-lightbox";
 import { Button } from "@/components/ui/button";
@@ -66,6 +66,20 @@ export function ImageComposer({
     () => referenceImages.map((image, index) => ({ id: `${image.name}-${index}`, src: image.dataUrl })),
     [referenceImages],
   );
+
+  const handleTextareaPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (mode !== "edit") {
+      return;
+    }
+
+    const imageFiles = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    void onReferenceImageChange(imageFiles);
+  };
 
   return (
     <div className="shrink-0 flex justify-center">
@@ -136,7 +150,8 @@ export function ImageComposer({
               ref={textareaRef}
               value={prompt}
               onChange={(event) => onPromptChange(event.target.value)}
-              placeholder={mode === "edit" ? "描述你希望如何修改这张参考图" : "输入你想要生成的画面"}
+              onPaste={handleTextareaPaste}
+              placeholder={mode === "edit" ? "描述你希望如何修改这张参考图，可直接粘贴图片" : "输入你想要生成的画面"}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
