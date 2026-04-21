@@ -1,6 +1,4 @@
 "use client";
-
-import Image from "next/image";
 import { LoaderCircle } from "lucide-react";
 
 import type { ImageConversation, StoredImage } from "@/store/image-conversations";
@@ -49,12 +47,9 @@ export function ImageResults({
         <div className="flex w-full max-w-[80%] flex-col items-end gap-3 px-1 pt-1">
           {selectedConversation.referenceImage ? (
             <div className="w-full max-w-[240px] overflow-hidden rounded-[20px] border border-stone-200 bg-white shadow-sm">
-              <Image
+              <img
                 src={selectedConversation.referenceImage.dataUrl}
                 alt="参考图"
-                width={480}
-                height={480}
-                unoptimized
                 className="block h-auto w-full"
               />
             </div>
@@ -116,12 +111,9 @@ function ImageResultCard({
   if (image.status === "success" && image.b64_json) {
     return (
       <button type="button" onClick={() => onOpen(image.id)} className="group block w-full cursor-zoom-in">
-        <Image
+        <img
           src={`data:image/png;base64,${image.b64_json}`}
           alt={`Generated result ${index + 1}`}
-          width={1024}
-          height={1024}
-          unoptimized
           className="block h-auto w-full transition duration-200 group-hover:brightness-90"
         />
       </button>

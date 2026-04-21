@@ -1,6 +1,4 @@
 "use client";
-
-import Image from "next/image";
 import { ArrowUp, ImagePlus, LoaderCircle, X } from "lucide-react";
 import type { RefObject } from "react";
 
@@ -80,13 +78,10 @@ export function ImageComposer({
 
         {mode === "edit" && referenceImagePreview ? (
           <div className="mb-3 flex items-center gap-3 rounded-[28px] border border-stone-200/80 bg-white px-4 py-4 shadow-[0_18px_48px_rgba(28,25,23,0.08)]">
-            <Image
+            <img
               src={referenceImagePreview}
               alt={referenceImageName || "参考图预览"}
-              width={56}
-              height={56}
-              unoptimized
-              className="rounded-xl object-cover"
+              className="h-14 w-14 rounded-xl object-cover"
             />
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium text-stone-800">{referenceImageName}</div>

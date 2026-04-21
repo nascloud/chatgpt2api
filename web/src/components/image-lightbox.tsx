@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import Image from "next/image";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 
@@ -116,14 +115,10 @@ export function ImageLightbox({
             className="flex max-h-[90vh] max-w-[90vw] items-center justify-center"
             onClick={() => onOpenChange(false)}
           >
-            <Image
+            <img
               src={current.src}
               alt=""
-              width={1536}
-              height={1536}
-              unoptimized
               className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
-              style={{ width: "auto", height: "auto" }}
               onClick={(e) => e.stopPropagation()}
               draggable={false}
             />
