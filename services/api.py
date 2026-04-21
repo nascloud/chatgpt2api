@@ -13,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from services.account_service import account_service
 from services.chatgpt_service import ChatGPTService
 from services.config import config
+from services.cpa_service import cpa_config, cpa_import_service, list_remote_files
+
 from services.image_service import ImageGenerationError
 from services.version import get_app_version
 
@@ -68,6 +70,22 @@ class ResponseCreateRequest(BaseModel):
     stream: bool | None = None
 
 
+class CPAPoolCreateRequest(BaseModel):
+    name: str = ""
+    base_url: str = ""
+    secret_key: str = ""
+
+
+class CPAPoolUpdateRequest(BaseModel):
+    name: str | None = None
+    base_url: str | None = None
+    secret_key: str | None = None
+
+
+class CPAImportRequest(BaseModel):
+    names: list[str] = Field(default_factory=list)
+
+
 def build_model_item(model_id: str) -> dict[str, object]:
     return {
         "id": model_id,
@@ -75,6 +93,20 @@ def build_model_item(model_id: str) -> dict[str, object]:
         "created": 0,
         "owned_by": "chatgpt2api",
     }
+
+
+def sanitize_cpa_pool(pool: dict | None) -> dict | None:
+    if not isinstance(pool, dict):
+        return None
+    return {
+        key: value
+        for key, value in pool.items()
+        if key != "secret_key"
+    }
+
+
+def sanitize_cpa_pools(pools: list[dict]) -> list[dict]:
+    return [sanitized for pool in pools if (sanitized := sanitize_cpa_pool(pool)) is not None]
 
 
 def extract_bearer_token(authorization: str | None) -> str:
@@ -117,7 +149,11 @@ def resolve_web_asset(requested_path: str) -> Path | None:
         candidates = [WEB_DIST_DIR / "index.html"]
     else:
         relative_path = Path(clean_path)
-        candidates = [WEB_DIST_DIR / relative_path, WEB_DIST_DIR / relative_path / "index.html", WEB_DIST_DIR / f"{clean_path}.html"]
+        candidates = [
+            WEB_DIST_DIR / relative_path,
+            WEB_DIST_DIR / relative_path / "index.html",
+            WEB_DIST_DIR / f"{clean_path}.html",
+        ]
 
     for candidate in candidates:
         try:
@@ -156,7 +192,13 @@ def create_app() -> FastAPI:
 
     @router.get("/v1/models")
     async def list_models():
-        return {"object": "list", "data": [build_model_item("gpt-image-1"), build_model_item("gpt-image-2")]}
+        return {
+            "object": "list",
+            "data": [
+                build_model_item("gpt-image-1"),
+                build_model_item("gpt-image-2"),
+            ],
+        }
 
     @router.post("/auth/login")
     async def login(authorization: str | None = Header(default=None)):
@@ -180,7 +222,12 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail={"error": "tokens is required"})
         result = account_service.add_accounts(tokens)
         refresh_result = account_service.refresh_accounts(tokens)
-        return {**result, "refreshed": refresh_result.get("refreshed", 0), "errors": refresh_result.get("errors", []), "items": refresh_result.get("items", result.get("items", []))}
+        return {
+            **result,
+            "refreshed": refresh_result.get("refreshed", 0),
+            "errors": refresh_result.get("errors", []),
+            "items": refresh_result.get("items", result.get("items", [])),
+        }
 
     @router.delete("/api/accounts")
     async def delete_accounts(body: AccountDeleteRequest, authorization: str | None = Header(default=None)):
@@ -207,7 +254,15 @@ def create_app() -> FastAPI:
         if not access_token:
             raise HTTPException(status_code=400, detail={"error": "access_token is required"})
 
-        updates = {key: value for key, value in {"type": body.type, "status": body.status, "quota": body.quota}.items() if value is not None}
+        updates = {
+            key: value
+            for key, value in {
+                "type": body.type,
+                "status": body.status,
+                "quota": body.quota,
+            }.items()
+            if value is not None
+        }
         if not updates:
             raise HTTPException(status_code=400, detail={"error": "no updates provided"})
 
@@ -234,6 +289,88 @@ def create_app() -> FastAPI:
         require_auth_key(authorization)
         return await run_in_threadpool(chatgpt_service.create_response, body.model_dump(mode="python"))
 
+    # ── CPA multi-pool endpoints ────────────────────────────────────
+
+    @router.get("/api/cpa/pools")
+    async def list_cpa_pools(authorization: str | None = Header(default=None)):
+        require_auth_key(authorization)
+        return {"pools": sanitize_cpa_pools(cpa_config.list_pools())}
+
+    @router.post("/api/cpa/pools")
+    async def create_cpa_pool(
+            body: CPAPoolCreateRequest,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        if not body.base_url.strip():
+            raise HTTPException(status_code=400, detail={"error": "base_url is required"})
+        if not body.secret_key.strip():
+            raise HTTPException(status_code=400, detail={"error": "secret_key is required"})
+        pool = cpa_config.add_pool(
+            name=body.name,
+            base_url=body.base_url,
+            secret_key=body.secret_key,
+        )
+        return {"pool": sanitize_cpa_pool(pool), "pools": sanitize_cpa_pools(cpa_config.list_pools())}
+
+    @router.post("/api/cpa/pools/{pool_id}")
+    async def update_cpa_pool(
+            pool_id: str,
+            body: CPAPoolUpdateRequest,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        pool = cpa_config.update_pool(pool_id, body.model_dump(exclude_none=True))
+        if pool is None:
+            raise HTTPException(status_code=404, detail={"error": "pool not found"})
+        return {"pool": sanitize_cpa_pool(pool), "pools": sanitize_cpa_pools(cpa_config.list_pools())}
+
+    @router.delete("/api/cpa/pools/{pool_id}")
+    async def delete_cpa_pool(
+            pool_id: str,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        if not cpa_config.delete_pool(pool_id):
+            raise HTTPException(status_code=404, detail={"error": "pool not found"})
+        return {"pools": sanitize_cpa_pools(cpa_config.list_pools())}
+
+    @router.get("/api/cpa/pools/{pool_id}/files")
+    async def cpa_pool_files(
+            pool_id: str,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        pool = cpa_config.get_pool(pool_id)
+        if pool is None:
+            raise HTTPException(status_code=404, detail={"error": "pool not found"})
+        files = await run_in_threadpool(list_remote_files, pool)
+        return {"pool_id": pool_id, "files": files}
+
+    @router.post("/api/cpa/pools/{pool_id}/import")
+    async def cpa_pool_import(
+            pool_id: str,
+            body: CPAImportRequest,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        pool = cpa_config.get_pool(pool_id)
+        if pool is None:
+            raise HTTPException(status_code=404, detail={"error": "pool not found"})
+        try:
+            job = cpa_import_service.start_import(pool, body.names)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        return {"import_job": job}
+
+    @router.get("/api/cpa/pools/{pool_id}/import")
+    async def cpa_pool_import_progress(pool_id: str, authorization: str | None = Header(default=None)):
+        require_auth_key(authorization)
+        pool = cpa_config.get_pool(pool_id)
+        if pool is None:
+            raise HTTPException(status_code=404, detail={"error": "pool not found"})
+        return {"import_job": pool.get("import_job")}
+
     app.include_router(router)
 
     @app.get("/{full_path:path}", include_in_schema=False)
@@ -241,6 +378,10 @@ def create_app() -> FastAPI:
         asset = resolve_web_asset(full_path)
         if asset is not None:
             return FileResponse(asset)
+
+        # Static assets (_next/*) must not fallback to HTML — return 404
+        if full_path.strip("/").startswith("_next/"):
+            raise HTTPException(status_code=404, detail="Not Found")
 
         fallback = resolve_web_asset("")
         if fallback is None:

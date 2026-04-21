@@ -17,10 +17,12 @@ function readAppVersion() {
 const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || readAppVersion()
 
 const nextConfig: NextConfig = {
+    allowedDevOrigins: ['127.0.0.1'],
     env: {
         NEXT_PUBLIC_APP_VERSION: appVersion,
     },
     output: 'export',
+    trailingSlash: true,
     images: {
         unoptimized: true,
     },

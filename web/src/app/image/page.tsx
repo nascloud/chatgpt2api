@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, LoaderCircle, MessageSquarePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { ImageLightbox } from "@/components/image-lightbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -96,8 +97,10 @@ export default function ImagePage() {
   const [conversations, setConversations] = useState<ImageConversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
   const [availableQuota, setAvailableQuota] = useState("加载中");
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const resultsViewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -105,6 +108,38 @@ export default function ImagePage() {
   const selectedConversation = useMemo(
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
+  );
+  const isSelectedGenerating = selectedConversationId !== null && generatingIds.has(selectedConversationId);
+  const hasAnyGenerating = generatingIds.size > 0;
+
+  const addGeneratingId = useCallback((id: string) => {
+    setGeneratingIds((prev) => new Set(prev).add(id));
+  }, []);
+  const removeGeneratingId = useCallback((id: string) => {
+    setGeneratingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const lightboxImages = useMemo(
+    () =>
+      (selectedConversation?.images ?? [])
+        .filter((img): img is StoredImage & { b64_json: string } => img.status === "success" && !!img.b64_json)
+        .map((img) => ({ id: img.id, src: `data:image/png;base64,${img.b64_json}` })),
+    [selectedConversation],
+  );
+
+  const openLightbox = useCallback(
+    (imageId: string) => {
+      const idx = lightboxImages.findIndex((img) => img.id === imageId);
+      if (idx >= 0) {
+        setLightboxIndex(idx);
+        setLightboxOpen(true);
+      }
+    },
+    [lightboxImages],
   );
 
   useEffect(() => {
@@ -165,7 +200,7 @@ export default function ImagePage() {
   }, [loadQuota]);
 
   useEffect(() => {
-    if (!selectedConversation && !isGenerating) {
+    if (!selectedConversation && !isSelectedGenerating) {
       return;
     }
 
@@ -173,7 +208,7 @@ export default function ImagePage() {
       top: resultsViewportRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [selectedConversation, isGenerating]);
+  }, [selectedConversation, isSelectedGenerating]);
 
   const persistConversation = async (conversation: ImageConversation) => {
     setConversations((prev) => {
@@ -260,7 +295,7 @@ export default function ImagePage() {
       status: "generating",
     };
 
-    setIsGenerating(true);
+    addGeneratingId(conversationId);
     setSelectedConversationId(conversationId);
     setImagePrompt("");
 
@@ -339,7 +374,7 @@ export default function ImagePage() {
       });
       toast.error(message);
     } finally {
-      setIsGenerating(false);
+      removeGeneratingId(conversationId);
     }
   };
 
@@ -379,6 +414,7 @@ export default function ImagePage() {
               ) : (
                 conversations.map((conversation) => {
                   const active = conversation.id === selectedConversationId;
+                  const generating = generatingIds.has(conversation.id);
                   return (
                     <div
                       key={conversation.id}
@@ -394,7 +430,10 @@ export default function ImagePage() {
                         onClick={() => setSelectedConversationId(conversation.id)}
                         className="block w-full pr-8 text-left"
                       >
-                        <div className="truncate text-sm font-semibold">{conversation.title}</div>
+                        <div className="flex items-center gap-1.5 truncate text-sm font-semibold">
+                          {generating && <LoaderCircle className="size-3.5 shrink-0 animate-spin text-stone-400" />}
+                          <span className="truncate">{conversation.title}</span>
+                        </div>
                         <div className={cn("mt-1 text-xs", active ? "text-stone-500" : "text-stone-400")}>
                           {formatConversationTime(conversation.createdAt)}
                         </div>
@@ -471,14 +510,20 @@ export default function ImagePage() {
                         {selectedConversation.images.map((image, index) => (
                           <div key={image.id} className="break-inside-avoid overflow-hidden rounded-[22px]">
                             {image.status === "success" && image.b64_json ? (
-                              <Image
-                                src={`data:image/png;base64,${image.b64_json}`}
-                                alt={`Generated result ${index + 1}`}
-                                width={1024}
-                                height={1024}
-                                unoptimized
-                                className="block h-auto w-full"
-                              />
+                              <button
+                                type="button"
+                                onClick={() => openLightbox(image.id)}
+                                className="group block w-full cursor-zoom-in"
+                              >
+                                <Image
+                                  src={`data:image/png;base64,${image.b64_json}`}
+                                  alt={`Generated result ${index + 1}`}
+                                  width={1024}
+                                  height={1024}
+                                  unoptimized
+                                  className="block h-auto w-full transition duration-200 group-hover:brightness-90"
+                                />
+                              </button>
                             ) : image.status === "error" ? (
                               <div className="flex min-h-[320px] items-center justify-center bg-rose-50 px-6 py-8 text-center text-sm leading-6 text-rose-600">
                                 {image.error || "生成失败"}
@@ -526,9 +571,7 @@ export default function ImagePage() {
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
-                      if (!isGenerating) {
-                        void handleGenerateImage();
-                      }
+                      void handleGenerateImage();
                     }
                   }}
                   className="min-h-[148px] resize-none rounded-[32px] border-0 bg-transparent px-6 pt-6 pb-20 text-[15px] leading-7 text-stone-900 shadow-none placeholder:text-stone-400 focus-visible:ring-0"
@@ -539,6 +582,12 @@ export default function ImagePage() {
                     <div className="rounded-full bg-stone-100 px-3 py-2 text-xs font-medium text-stone-600">
                       剩余额度 {availableQuota}
                     </div>
+                    {hasAnyGenerating && (
+                      <div className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                        <LoaderCircle className="size-3 animate-spin" />
+                        {generatingIds.size} 个任务进行中
+                      </div>
+                    )}
                     <Select value={imageModel} onValueChange={(value) => setImageModel(value as ImageModel)}>
                       <SelectTrigger className="h-10 w-[164px] rounded-full border-stone-200 bg-white text-sm font-medium text-stone-700 shadow-none focus-visible:ring-0">
                         <SelectValue />
@@ -569,11 +618,11 @@ export default function ImagePage() {
                   <button
                     type="button"
                     onClick={() => void handleGenerateImage()}
-                    disabled={isGenerating}
+                    disabled={!imagePrompt.trim()}
                     className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-stone-950 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300"
                     aria-label="生成图片"
                   >
-                    {isGenerating ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+                    <ArrowUp className="size-4" />
                   </button>
                 </div>
               </div>
@@ -581,6 +630,14 @@ export default function ImagePage() {
           </div>
         </div>
       </section>
+
+      <ImageLightbox
+        images={lightboxImages}
+        currentIndex={lightboxIndex}
+        open={lightboxOpen}
+        onOpenChange={setLightboxOpen}
+        onIndexChange={setLightboxIndex}
+      />
     </>
   );
 }
