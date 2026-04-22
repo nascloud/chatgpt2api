@@ -60,7 +60,7 @@ class AccountService:
         if not isinstance(account, dict):
             return False
         status = str(account.get("status") or "").strip()
-        if status in {"禁用", "限流"}:
+        if status in {"禁用", "限流", "异常"}:
             return False
         if bool(account.get("image_quota_unknown")):
             return True

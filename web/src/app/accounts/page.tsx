@@ -138,13 +138,14 @@ function formatRestoreAt(value?: string | null) {
 }
 
 function formatQuotaSummary(accounts: Account[]) {
-  if (accounts.some((account) => account.status !== "禁用" && isUnlimitedImageQuotaAccount(account))) {
+  const availableAccounts = accounts.filter((account) => account.status === "正常");
+  if (availableAccounts.some(isUnlimitedImageQuotaAccount)) {
     return "∞";
   }
-  if (accounts.some((account) => account.status !== "禁用" && account.imageQuotaUnknown)) {
+  if (availableAccounts.some((account) => account.imageQuotaUnknown)) {
     return "未知";
   }
-  return formatCompact(accounts.reduce((sum, account) => sum + Math.max(0, account.quota), 0));
+  return formatCompact(availableAccounts.reduce((sum, account) => sum + Math.max(0, account.quota), 0));
 }
 
 function maskToken(token?: string) {
