@@ -634,7 +634,7 @@ def _resolve_upstream_model(access_token: str, requested_model: str) -> str:
     return str(requested_model or DEFAULT_MODEL).strip() or DEFAULT_MODEL
 
 
-def generate_image_result(access_token: str, prompt: str, model: str = DEFAULT_MODEL) -> dict:
+def generate_image_result(access_token: str, prompt: str, model: str = DEFAULT_MODEL, response_format: str = "b64_json") -> dict:
     prompt = str(prompt or "").strip()
     access_token = str(access_token or "").strip()
     if not prompt:
@@ -684,15 +684,17 @@ def generate_image_result(access_token: str, prompt: str, model: str = DEFAULT_M
         download_url = _fetch_download_url(session, access_token, device_id, actual_conversation_id, first_file_id)
         if not download_url:
             raise ImageGenerationError("failed to get download url")
-        result = GeneratedImage(
-            b64_json=_download_as_base64(session, download_url),
-            revised_prompt=prompt,
-            url=download_url,
-        )
-        print(f"[image-upstream] success token={access_token[:12]}... images=1")
+        
+        # 根据 response_format 返回不同格式
+        if response_format == "url":
+            result_data = {"url": download_url, "revised_prompt": prompt}
+        else:
+            result_data = {"b64_json": _download_as_base64(session, download_url), "revised_prompt": prompt}
+        
+        print(f"[image-upstream] success token={access_token[:12]}... images=1 format={response_format}")
         return {
             "created": time.time_ns() // 1_000_000_000,
-            "data": [{"b64_json": result.b64_json, "revised_prompt": result.revised_prompt}],
+            "data": [result_data],
         }
     except Exception as exc:
         print(f"[image-upstream] fail token={access_token[:12]}... error={exc}")
@@ -741,6 +743,7 @@ def edit_image_result(
     prompt: str,
     images: list[tuple[bytes, str, str]],
     model: str = DEFAULT_MODEL,
+    response_format: str = "b64_json",
 ) -> dict:
     prompt = str(prompt or "").strip()
     access_token = str(access_token or "").strip()
@@ -818,15 +821,17 @@ def edit_image_result(
         download_url = _fetch_download_url(session, access_token, device_id, actual_conversation_id, first_file_id)
         if not download_url:
             raise ImageGenerationError("failed to get download url")
-        result = GeneratedImage(
-            b64_json=_download_as_base64(session, download_url),
-            revised_prompt=prompt,
-            url=download_url,
-        )
-        print(f"[image-edit-upstream] success token={access_token[:12]}... inputs={len(uploaded_images)}")
+        
+        # 根据 response_format 返回不同格式
+        if response_format == "url":
+            result_data = {"url": download_url, "revised_prompt": prompt}
+        else:
+            result_data = {"b64_json": _download_as_base64(session, download_url), "revised_prompt": prompt}
+        
+        print(f"[image-edit-upstream] success token={access_token[:12]}... inputs={len(uploaded_images)} format={response_format}")
         return {
             "created": time.time_ns() // 1_000_000_000,
-            "data": [{"b64_json": result.b64_json, "revised_prompt": result.revised_prompt}],
+            "data": [result_data],
         }
     except Exception as exc:
         print(f"[image-edit-upstream] fail token={access_token[:12]}... error={exc}")

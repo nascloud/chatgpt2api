@@ -44,7 +44,7 @@ class ChatGPTService:
     def __init__(self, account_service: AccountService):
         self.account_service = account_service
 
-    def generate_with_pool(self, prompt: str, model: str, n: int):
+    def generate_with_pool(self, prompt: str, model: str, n: int, response_format: str = "b64_json"):
         created = None
         image_items: list[dict[str, object]] = []
 
@@ -58,7 +58,7 @@ class ChatGPTService:
 
                 print(f"[image-generate] start pooled token={request_token[:12]}... model={model} index={index}/{n}")
                 try:
-                    result = generate_image_result(request_token, prompt, model)
+                    result = generate_image_result(request_token, prompt, model, response_format)
                     account = self.account_service.mark_image_result(request_token, success=True)
                     if created is None:
                         created = result.get("created")
@@ -97,6 +97,7 @@ class ChatGPTService:
         images: Iterable[tuple[bytes, str, str]],
         model: str,
         n: int,
+        response_format: str = "b64_json",
     ):
         created = None
         image_items: list[dict[str, object]] = []
@@ -117,7 +118,7 @@ class ChatGPTService:
                     f"model={model} index={index}/{n} images={len(normalized_images)}"
                 )
                 try:
-                    result = edit_image_result(request_token, prompt, normalized_images, model)
+                    result = edit_image_result(request_token, prompt, normalized_images, model, response_format)
                     account = self.account_service.mark_image_result(request_token, success=True)
                     if created is None:
                         created = result.get("created")

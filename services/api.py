@@ -275,7 +275,9 @@ def create_app() -> FastAPI:
     async def generate_images(body: ImageGenerationRequest, authorization: str | None = Header(default=None)):
         require_auth_key(authorization)
         try:
-            return await run_in_threadpool(chatgpt_service.generate_with_pool, body.prompt, body.model, body.n)
+            return await run_in_threadpool(
+                chatgpt_service.generate_with_pool, body.prompt, body.model, body.n, body.response_format
+            )
         except ImageGenerationError as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
@@ -286,6 +288,7 @@ def create_app() -> FastAPI:
             prompt: str = Form(...),
             model: str = Form(default="gpt-image-1"),
             n: int = Form(default=1),
+            response_format: str = Form(default="b64_json"),
     ):
         require_auth_key(authorization)
         if n < 1 or n > 4:
@@ -303,7 +306,7 @@ def create_app() -> FastAPI:
 
         try:
             return await run_in_threadpool(
-                chatgpt_service.edit_with_pool, prompt, images, model, n
+                chatgpt_service.edit_with_pool, prompt, images, model, n, response_format
             )
         except ImageGenerationError as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
