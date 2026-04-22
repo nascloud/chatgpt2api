@@ -65,6 +65,7 @@ def _normalize_server(raw: dict) -> dict:
         "email": _clean(raw.get("email")),
         "password": _clean(raw.get("password")),
         "api_key": _clean(raw.get("api_key")),
+        "group_id": _clean(raw.get("group_id")),
         "import_job": _normalize_import_job(raw.get("import_job"), fail_unfinished=True),
     }
 
@@ -104,7 +105,16 @@ class Sub2APIConfig:
                     return dict(server)
         return None
 
-    def add_server(self, *, name: str, base_url: str, email: str, password: str, api_key: str) -> dict:
+    def add_server(
+        self,
+        *,
+        name: str,
+        base_url: str,
+        email: str,
+        password: str,
+        api_key: str,
+        group_id: str = "",
+    ) -> dict:
         server = _normalize_server({
             "id": _new_id(),
             "name": name,
@@ -112,6 +122,7 @@ class Sub2APIConfig:
             "email": email,
             "password": password,
             "api_key": api_key,
+            "group_id": group_id,
         })
         with self._lock:
             self._servers.append(server)
@@ -240,21 +251,25 @@ def list_remote_accounts(server: dict) -> list[dict]:
         return []
 
     headers = _auth_headers(server)
+    group_id = _clean(server.get("group_id"))
 
     session = Session(verify=True)
     items: list[dict] = []
     try:
         page = 1
         while True:
+            params: dict[str, object] = {
+                "platform": "openai",
+                "type": "oauth",
+                "page": page,
+                "page_size": 200,
+            }
+            if group_id:
+                params["group"] = group_id
             response = session.get(
                 f"{base_url.rstrip('/')}/api/v1/admin/accounts",
                 headers=headers,
-                params={
-                    "platform": "openai",
-                    "type": "oauth",
-                    "page": page,
-                    "page_size": 200,
-                },
+                params=params,
                 timeout=30,
             )
             if not response.ok:
@@ -281,6 +296,62 @@ def list_remote_accounts(server: dict) -> list[dict]:
                     "status": _clean(account.get("status")),
                     "expires_at": _clean(credentials.get("expires_at")),
                     "has_refresh_token": bool(_clean(credentials.get("refresh_token"))),
+                })
+
+            total = int(payload.get("total") or 0) if isinstance(payload, dict) else 0
+            if page * 200 >= total or len(data) < 200:
+                break
+            page += 1
+    finally:
+        session.close()
+
+    return items
+
+
+def list_remote_groups(server: dict) -> list[dict]:
+    """Return OpenAI account groups from a sub2api server."""
+    base_url = _clean(server.get("base_url"))
+    if not base_url:
+        return []
+
+    headers = _auth_headers(server)
+
+    session = Session(verify=True)
+    items: list[dict] = []
+    try:
+        page = 1
+        while True:
+            response = session.get(
+                f"{base_url.rstrip('/')}/api/v1/admin/groups",
+                headers=headers,
+                params={
+                    "platform": "openai",
+                    "page": page,
+                    "page_size": 200,
+                },
+                timeout=30,
+            )
+            if not response.ok:
+                raise RuntimeError(f"sub2api groups failed: HTTP {response.status_code} {response.text[:200]}")
+            payload = response.json()
+
+            data = payload.get("data") if isinstance(payload, dict) else None
+            if not isinstance(data, list) or not data:
+                break
+
+            for group in data:
+                if not isinstance(group, dict):
+                    continue
+                group_id = group.get("id")
+                if group_id is None:
+                    continue
+                items.append({
+                    "id": str(group_id),
+                    "name": _clean(group.get("name")),
+                    "description": _clean(group.get("description")),
+                    "status": _clean(group.get("status")),
+                    "account_count": int(group.get("account_count") or 0),
+                    "active_account_count": int(group.get("active_account_count") or 0),
                 })
 
             total = int(payload.get("total") or 0) if isinstance(payload, dict) else 0

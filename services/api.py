@@ -17,6 +17,7 @@ from services.cpa_service import cpa_config, cpa_import_service, list_remote_fil
 from services.proxy_service import proxy_config, test_proxy
 from services.sub2api_service import (
     list_remote_accounts as sub2api_list_remote_accounts,
+    list_remote_groups as sub2api_list_remote_groups,
     sub2api_config,
     sub2api_import_service,
 )
@@ -98,6 +99,7 @@ class Sub2APIServerCreateRequest(BaseModel):
     email: str = ""
     password: str = ""
     api_key: str = ""
+    group_id: str = ""
 
 
 class Sub2APIServerUpdateRequest(BaseModel):
@@ -106,6 +108,7 @@ class Sub2APIServerUpdateRequest(BaseModel):
     email: str | None = None
     password: str | None = None
     api_key: str | None = None
+    group_id: str | None = None
 
 
 class Sub2APIImportRequest(BaseModel):
@@ -478,6 +481,7 @@ def create_app() -> FastAPI:
             email=body.email,
             password=body.password,
             api_key=body.api_key,
+            group_id=body.group_id,
         )
         return {
             "server": sanitize_sub2api_server(server),
@@ -508,6 +512,21 @@ def create_app() -> FastAPI:
         if not sub2api_config.delete_server(server_id):
             raise HTTPException(status_code=404, detail={"error": "server not found"})
         return {"servers": sanitize_sub2api_servers(sub2api_config.list_servers())}
+
+    @router.get("/api/sub2api/servers/{server_id}/groups")
+    async def sub2api_server_groups(
+            server_id: str,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        server = sub2api_config.get_server(server_id)
+        if server is None:
+            raise HTTPException(status_code=404, detail={"error": "server not found"})
+        try:
+            groups = await run_in_threadpool(sub2api_list_remote_groups, server)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
+        return {"server_id": server_id, "groups": groups}
 
     @router.get("/api/sub2api/servers/{server_id}/accounts")
     async def sub2api_server_accounts(

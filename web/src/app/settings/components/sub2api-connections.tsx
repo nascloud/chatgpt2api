@@ -5,11 +5,13 @@ import {
   Eye,
   EyeOff,
   Import,
+  Layers,
   Link2,
   LoaderCircle,
   Mail,
   Pencil,
   Plus,
+  RefreshCcw,
   Save,
   Search,
   ServerCog,
@@ -42,10 +44,12 @@ import {
   createSub2APIServer,
   deleteSub2APIServer,
   fetchSub2APIServerAccounts,
+  fetchSub2APIServerGroups,
   fetchSub2APIServers,
   startSub2APIImport,
   updateSub2APIServer,
   type Sub2APIRemoteAccount,
+  type Sub2APIRemoteGroup,
   type Sub2APIServer,
 } from "@/lib/api";
 
@@ -89,9 +93,13 @@ export function Sub2APIConnections() {
   const [formEmail, setFormEmail] = useState("");
   const [formPassword, setFormPassword] = useState("");
   const [formApiKey, setFormApiKey] = useState("");
+  const [formGroupId, setFormGroupId] = useState("");
   const [authMode, setAuthMode] = useState<AuthMode>("password");
   const [showSecret, setShowSecret] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  const [remoteGroups, setRemoteGroups] = useState<Sub2APIRemoteGroup[] | null>(null);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [loadingAccountsId, setLoadingAccountsId] = useState<string | null>(null);
@@ -166,8 +174,10 @@ export function Sub2APIConnections() {
     setFormEmail("");
     setFormPassword("");
     setFormApiKey("");
+    setFormGroupId("");
     setAuthMode("password");
     setShowSecret(false);
+    setRemoteGroups(null);
     setDialogOpen(true);
   };
 
@@ -178,9 +188,32 @@ export function Sub2APIConnections() {
     setFormEmail(server.email);
     setFormPassword("");
     setFormApiKey("");
+    setFormGroupId(server.group_id || "");
     setAuthMode(server.has_api_key ? "api_key" : "password");
     setShowSecret(false);
+    setRemoteGroups(null);
     setDialogOpen(true);
+  };
+
+  const handleFetchGroups = async () => {
+    if (!editingServer) {
+      toast.error("请先保存连接后再拉取分组");
+      return;
+    }
+    setIsLoadingGroups(true);
+    try {
+      const data = await fetchSub2APIServerGroups(editingServer.id);
+      setRemoteGroups(data.groups);
+      if (data.groups.length === 0) {
+        toast.message("远端没有 platform=openai 的分组");
+      } else {
+        toast.success(`读取到 ${data.groups.length} 个分组`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "拉取分组失败");
+    } finally {
+      setIsLoadingGroups(false);
+    }
   };
 
   const handleSave = async () => {
@@ -208,6 +241,7 @@ export function Sub2APIConnections() {
         const updates: Parameters<typeof updateSub2APIServer>[1] = {
           name: formName.trim(),
           base_url: formBaseUrl.trim(),
+          group_id: formGroupId.trim(),
         };
         if (authMode === "password") {
           updates.email = formEmail.trim();
@@ -232,6 +266,7 @@ export function Sub2APIConnections() {
           email: authMode === "password" ? formEmail.trim() : "",
           password: authMode === "password" ? formPassword.trim() : "",
           api_key: authMode === "api_key" ? formApiKey.trim() : "",
+          group_id: formGroupId.trim(),
         });
         setServers(data.servers);
         toast.success("连接已添加");
@@ -401,6 +436,7 @@ export function Sub2APIConnections() {
                         <div className="truncate text-xs text-stone-400">
                           {server.base_url}
                           {server.email ? ` · ${server.email}` : server.has_api_key ? " · API Key" : ""}
+                          {server.group_id ? ` · 分组 ${server.group_id}` : " · 全部分组"}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
@@ -615,6 +651,60 @@ export function Sub2APIConnections() {
                 </div>
               </div>
             )}
+            <div className="space-y-2">
+              <label className="flex items-center gap-1.5 text-sm font-medium text-stone-700">
+                <Layers className="size-3.5" />
+                分组（可选）
+              </label>
+              {remoteGroups && remoteGroups.length > 0 ? (
+                <Select value={formGroupId || "__all__"} onValueChange={(value) => setFormGroupId(value === "__all__" ? "" : value)}>
+                  <SelectTrigger className="h-11 rounded-xl border-stone-200 bg-white">
+                    <SelectValue placeholder="选择分组" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">全部分组（不限制）</SelectItem>
+                    <SelectItem value="ungrouped">未分组</SelectItem>
+                    {remoteGroups.map((group) => (
+                      <SelectItem key={group.id} value={group.id}>
+                        {group.name || `Group ${group.id}`}
+                        {group.account_count
+                          ? `（${group.active_account_count}/${group.account_count}）`
+                          : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={formGroupId}
+                  onChange={(event) => setFormGroupId(event.target.value)}
+                  placeholder="留空则同步所有分组；或填写分组 ID / ungrouped"
+                  className="h-11 rounded-xl border-stone-200 bg-white"
+                />
+              )}
+              {editingServer ? (
+                <div className="flex items-center justify-between gap-2 text-xs text-stone-500">
+                  <span>同步时会用分组 ID 过滤，留空 = 同步所有 OpenAI OAuth 账号。</span>
+                  <Button
+                    variant="outline"
+                    className="h-8 rounded-lg border-stone-200 bg-white px-2 text-xs text-stone-600"
+                    onClick={() => void handleFetchGroups()}
+                    disabled={isLoadingGroups}
+                  >
+                    {isLoadingGroups ? (
+                      <LoaderCircle className="size-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCcw className="size-3.5" />
+                    )}
+                    {remoteGroups ? "重新拉取" : "拉取分组"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="text-xs text-stone-500">
+                  添加完连接后可在编辑对话框里点「拉取分组」选择具体分组。
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter className="pt-2">
             <Button
