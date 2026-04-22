@@ -1,15 +1,20 @@
 "use client";
 
-import { Link2, LoaderCircle, Save } from "lucide-react";
+import { useState } from "react";
+import { Link2, LoaderCircle, PlugZap, Save } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { testProxy, type ProxyTestResult } from "@/lib/api";
 
 import { useSettingsStore } from "../store";
 
 export function ProxySettingsCard() {
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ProxyTestResult | null>(null);
   const config = useSettingsStore((state) => state.config);
   const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
   const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
@@ -17,6 +22,29 @@ export function ProxySettingsCard() {
   const saveConfig = useSettingsStore((state) => state.saveConfig);
 
   const proxy = config?.proxy ?? "";
+
+  const handleTest = async () => {
+    const candidate = proxy.trim();
+    if (!candidate) {
+      toast.error("请先填写代理地址");
+      return;
+    }
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const data = await testProxy(candidate);
+      setTestResult(data.result);
+      if (data.result.ok) {
+        toast.success(`代理可用（${data.result.latency_ms} ms，HTTP ${data.result.status}）`);
+      } else {
+        toast.error(`代理不可用：${data.result.error ?? "未知错误"}`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "测试代理失败");
+    } finally {
+      setIsTesting(false);
+    }
+  };
 
   return (
     <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
@@ -46,7 +74,10 @@ export function ProxySettingsCard() {
               <label className="text-sm font-medium text-stone-700">代理地址</label>
               <Input
                 value={proxy}
-                onChange={(event) => setProxy(event.target.value)}
+                onChange={(event) => {
+                  setProxy(event.target.value);
+                  setTestResult(null);
+                }}
                 placeholder="http://user:pass@127.0.0.1:7890"
                 className="h-11 rounded-xl border-stone-200 bg-white"
               />
@@ -55,7 +86,30 @@ export function ProxySettingsCard() {
               </p>
             </div>
 
-            <div className="flex justify-end">
+            {testResult ? (
+              <div
+                className={`rounded-xl border px-4 py-3 text-sm leading-6 ${
+                  testResult.ok
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-rose-200 bg-rose-50 text-rose-800"
+                }`}
+              >
+                {testResult.ok
+                  ? `代理可用：HTTP ${testResult.status}，用时 ${testResult.latency_ms} ms`
+                  : `代理不可用：${testResult.error ?? "未知错误"}（用时 ${testResult.latency_ms} ms）`}
+              </div>
+            ) : null}
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                className="h-10 rounded-xl border-stone-200 bg-white px-5 text-stone-700"
+                onClick={() => void handleTest()}
+                disabled={isTesting || isLoadingConfig}
+              >
+                {isTesting ? <LoaderCircle className="size-4 animate-spin" /> : <PlugZap className="size-4" />}
+                测试代理
+              </Button>
               <Button
                 className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
                 onClick={() => void saveConfig()}

@@ -13,6 +13,7 @@ from services.account_service import account_service
 from services.chatgpt_service import ChatGPTService
 from services.config import config
 from services.cpa_service import cpa_config, cpa_import_service, list_remote_files
+from services.proxy_service import test_proxy
 from services.sub2api_service import (
     list_remote_accounts as sub2api_list_remote_accounts,
     list_remote_groups as sub2api_list_remote_groups,
@@ -593,20 +594,6 @@ def create_app() -> FastAPI:
 
     # ── Upstream proxy endpoints ─────────────────────────────────────
 
-    @router.get("/api/proxy")
-    async def get_proxy(authorization: str | None = Header(default=None)):
-        require_auth_key(authorization)
-        return {"proxy": proxy_config.get_public()}
-
-    @router.post("/api/proxy")
-    async def update_proxy(body: ProxyUpdateRequest, authorization: str | None = Header(default=None)):
-        require_auth_key(authorization)
-        try:
-            proxy_config.update(enabled=body.enabled, url=body.url)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
-        return {"proxy": proxy_config.get_public()}
-
     @router.post("/api/proxy/test")
     async def test_proxy_endpoint(
             body: ProxyTestRequest,
@@ -615,7 +602,7 @@ def create_app() -> FastAPI:
         require_auth_key(authorization)
         candidate = (body.url or "").strip()
         if not candidate:
-            candidate = (proxy_config.get().get("url") or "").strip()
+            candidate = config.get_proxy_settings()
         if not candidate:
             raise HTTPException(status_code=400, detail={"error": "proxy url is required"})
         result = await run_in_threadpool(test_proxy, candidate)

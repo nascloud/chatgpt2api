@@ -7,6 +7,7 @@ import { CPAPoolsCard } from "./components/cpa-pools-card";
 import { ImportBrowserDialog } from "./components/import-browser-dialog";
 import { ProxySettingsCard } from "./components/proxy-settings-card";
 import { SettingsHeader } from "./components/settings-header";
+import { Sub2APIConnections } from "./components/sub2api-connections";
 import { useSettingsStore } from "./store";
 
 function SettingsDataController() {
@@ -49,6 +50,7 @@ export default function SettingsPage() {
       <section className="space-y-6">
         <ProxySettingsCard />
         <CPAPoolsCard />
+        <Sub2APIConnections />
       </section>
       <CPAPoolDialog />
       <ImportBrowserDialog />

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import time
+from urllib.parse import urlparse
+
+from curl_cffi.requests import Session
+
 from services.config import config
 
 
 class ProxySettingsStore:
-
     def build_session_kwargs(self, **session_kwargs) -> dict[str, object]:
         proxy = config.get_proxy_settings()
         if proxy:
@@ -14,19 +18,22 @@ class ProxySettingsStore:
         return session_kwargs
 
 
-proxy_settings = ProxySettingsStore()
+def _clean(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _is_valid_proxy_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https", "socks5", "socks5h"} and bool(parsed.netloc)
 
 
 def test_proxy(url: str, *, timeout: float = 15.0) -> dict:
-    """Probe chatgpt.com through the given proxy URL. Returns {ok, status, latency_ms, error}."""
     candidate = _clean(url)
     if not candidate:
         return {"ok": False, "status": 0, "latency_ms": 0, "error": "proxy url is required"}
     if not _is_valid_proxy_url(candidate):
         return {"ok": False, "status": 0, "latency_ms": 0, "error": "invalid proxy url"}
-
-    session = Session(impersonate="edge101", verify=True)
-    session.proxies.update({"http": candidate, "https": candidate})
+    session = Session(impersonate="edge101", verify=True, proxy=candidate)
     started = time.perf_counter()
     try:
         response = session.get(
@@ -51,3 +58,6 @@ def test_proxy(url: str, *, timeout: float = 15.0) -> dict:
         }
     finally:
         session.close()
+
+proxy_settings = ProxySettingsStore()
+
