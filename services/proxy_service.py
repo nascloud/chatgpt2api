@@ -111,11 +111,21 @@ class ProxyConfig:
 proxy_config = ProxyConfig(PROXY_CONFIG_FILE)
 
 
+def get_chatgpt_proxies() -> dict[str, str] | None:
+    """Return the proxies dict for chatgpt.com requests, or None if proxy is disabled."""
+    return proxy_config.get_proxies()
+
+
 def apply_proxy_to_session(session: Session) -> None:
-    """Attach the current upstream proxy to a curl_cffi Session, if configured."""
-    proxies = proxy_config.get_proxies()
+    """Attach the current upstream proxy to a curl_cffi Session, if configured.
+
+    Prefer passing `proxies=get_chatgpt_proxies()` directly to Session(...) instead —
+    some curl_cffi versions only honor proxies set at construction time. This helper
+    is kept for cases where the Session is created elsewhere.
+    """
+    proxies = get_chatgpt_proxies()
     if proxies:
-        session.proxies.update(proxies)
+        session.proxies = dict(proxies)
 
 
 def test_proxy(url: str, *, timeout: float = 15.0) -> dict:

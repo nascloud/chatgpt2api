@@ -12,7 +12,7 @@ from datetime import datetime
 from curl_cffi.requests import Session
 
 from services.config import config
-from services.proxy_service import apply_proxy_to_session
+from services.proxy_service import get_chatgpt_proxies
 
 
 class AccountService:
@@ -398,9 +398,12 @@ class AccountService:
             raise ValueError("access_token is required")
 
         headers, impersonate = self._build_remote_headers(access_token)
-        print(f"[account-refresh] start {access_token[:12]}...")
-        session = Session(impersonate=impersonate, verify=True)
-        apply_proxy_to_session(session)
+        proxies = get_chatgpt_proxies()
+        if proxies:
+            print(f"[account-refresh] start {access_token[:12]}... via proxy {proxies.get('https')}")
+        else:
+            print(f"[account-refresh] start {access_token[:12]}... direct")
+        session = Session(impersonate=impersonate, verify=True, proxies=proxies or None)
         session.headers.update(headers)
         try:
             with ThreadPoolExecutor(max_workers=2) as executor:
