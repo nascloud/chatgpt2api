@@ -14,6 +14,7 @@ from curl_cffi.requests import Session
 
 from services.account_service import account_service
 from services import proof_of_work
+from services.config import config
 from services.proxy_service import proxy_settings
 
 
@@ -624,7 +625,7 @@ def _download_as_base64(session: Session, download_url: str) -> str:
     return base64.b64encode(response.content).decode("ascii")
 
 
-def _download_and_save_image(session: Session, download_url: str, base_url: str = None) -> str:
+def _download_and_save_image(session: Session, download_url: str, base_url: str | None = None) -> str:
     """下载图片并保存到本地，返回本地 URL"""
     response = session.get(download_url, timeout=60)
     if not response.ok or not response.content:
@@ -634,14 +635,15 @@ def _download_and_save_image(session: Session, download_url: str, base_url: str 
     file_hash = hashlib.md5(response.content).hexdigest()
     timestamp = int(time.time())
     filename = f"{timestamp}_{file_hash}.png"
+    relative_dir = Path(time.strftime("%Y"), time.strftime("%m"), time.strftime("%d"))
 
     # 保存到本地
-    file_path = config.images_dir / filename
+    file_path = config.images_dir / relative_dir / filename
+    file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_bytes(response.content)
 
     # 使用传入的 base_url 或配置的 base_url
-    actual_base_url = base_url or config.base_url
-    return f"{actual_base_url}/images/{filename}"
+    return f"{(base_url or config.base_url)}/images/{relative_dir.as_posix()}/{filename}"
 
 
 def _resolve_upstream_model(access_token: str, requested_model: str) -> str:

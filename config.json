@@ -1,5 +1,6 @@
 {
   "auth-key": "chatgpt2api",
   "refresh_account_interval_minute": 60,
-  "proxy": ""
+  "proxy": "",
+  "base_url": ""
 }

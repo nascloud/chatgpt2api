@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Event, Thread
-from fastapi import APIRouter, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, FastAPI, File, Form, Header, Request, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -21,7 +21,6 @@ from services.sub2api_service import (
     sub2api_config,
     sub2api_import_service,
 )
-
 
 from services.image_service import ImageGenerationError
 from services.version import get_app_version
@@ -97,6 +96,7 @@ class CPAImportRequest(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
+
 class Sub2APIServerCreateRequest(BaseModel):
     name: str = ""
     base_url: str = ""
@@ -126,7 +126,6 @@ class ProxyUpdateRequest(BaseModel):
 
 class ProxyTestRequest(BaseModel):
     url: str = ""
-
 
 
 def build_model_item(model_id: str) -> dict[str, object]:
@@ -177,6 +176,10 @@ def extract_bearer_token(authorization: str | None) -> str:
 def require_auth_key(authorization: str | None) -> None:
     if extract_bearer_token(authorization) != str(config.auth_key or "").strip():
         raise HTTPException(status_code=401, detail={"error": "authorization is invalid"})
+
+
+def resolve_image_base_url(request: Request) -> str:
+    return config.base_url or f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
 
 
 def start_limited_account_watcher(stop_event: Event) -> Thread:
@@ -344,13 +347,12 @@ def create_app() -> FastAPI:
 
     @router.post("/v1/images/generations")
     async def generate_images(
-        body: ImageGenerationRequest,
-        request: Request,
-        authorization: str | None = Header(default=None)
+            body: ImageGenerationRequest,
+            request: Request,
+            authorization: str | None = Header(default=None)
     ):
         require_auth_key(authorization)
-        # 获取真实的请求 URL
-        base_url = f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
+        base_url = resolve_image_base_url(request)
         try:
             return await run_in_threadpool(
                 chatgpt_service.generate_with_pool, body.prompt, body.model, body.n, body.response_format, base_url
@@ -377,9 +379,7 @@ def create_app() -> FastAPI:
         if not uploads:
             raise HTTPException(status_code=400, detail={"error": "image file is required"})
 
-        # 获取真实的请求 URL
-        base_url = f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
-
+        base_url = resolve_image_base_url(request)
 
         images: list[tuple[bytes, str, str]] = []
         for upload in uploads:

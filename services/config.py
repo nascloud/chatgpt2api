@@ -51,6 +51,20 @@ class ConfigStore:
         except (TypeError, ValueError):
             return 60
 
+    @property
+    def images_dir(self) -> Path:
+        path = DATA_DIR / "images"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def base_url(self) -> str:
+        return str(
+            os.getenv("CHATGPT2API_BASE_URL")
+            or self.data.get("base_url")
+            or ""
+        ).strip().rstrip("/")
+
     def get(self) -> dict[str, object]:
         return dict(self.data)
 
