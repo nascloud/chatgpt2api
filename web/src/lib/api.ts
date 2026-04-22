@@ -3,6 +3,7 @@ import { httpRequest } from "@/lib/request";
 export type AccountType = "Free" | "Plus" | "Pro" | "Team";
 export type AccountStatus = "正常" | "限流" | "异常" | "禁用";
 export type ImageModel = "gpt-image-1" | "gpt-image-2";
+export type ProxyScheme = "http" | "https" | "socks5" | "socks5h";
 
 export type Account = {
   id: string;
@@ -46,6 +47,15 @@ type AccountRefreshResponse = {
 type AccountUpdateResponse = {
   item: Account;
   items: Account[];
+};
+
+export type ProxySettings = {
+  enabled: boolean;
+  scheme: ProxyScheme;
+  host: string;
+  port: number | null;
+  username: string;
+  has_password: boolean;
 };
 
 export async function login(authKey: string) {
@@ -135,6 +145,24 @@ export async function editImage(files: File | File[], prompt: string, model: Ima
       body: formData,
     },
   );
+}
+
+export async function fetchProxySettings() {
+  return httpRequest<{ proxy: ProxySettings }>("/api/settings/proxy");
+}
+
+export async function updateProxySettings(settings: {
+  enabled: boolean;
+  scheme: ProxyScheme;
+  host: string;
+  port: number | null;
+  username: string;
+  password?: string;
+}) {
+  return httpRequest<{ proxy: ProxySettings }>("/api/settings/proxy", {
+    method: "POST",
+    body: settings,
+  });
 }
 
 // ── CPA (CLIProxyAPI) ──────────────────────────────────────────────

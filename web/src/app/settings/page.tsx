@@ -40,15 +40,25 @@ import {
 import {
   createCPAPool,
   deleteCPAPool,
+  fetchProxySettings,
   fetchCPAPoolFiles,
   fetchCPAPools,
   startCPAImport,
+  updateProxySettings,
   updateCPAPool,
   type CPAPool,
   type CPARemoteFile,
+  type ProxyScheme,
+  type ProxySettings,
 } from "@/lib/api";
 
 const PAGE_SIZE_OPTIONS = ["50", "100", "200"] as const;
+const PROXY_SCHEME_OPTIONS: Array<{ value: ProxyScheme; label: string }> = [
+  { value: "http", label: "HTTP" },
+  { value: "https", label: "HTTPS" },
+  { value: "socks5", label: "SOCKS5" },
+  { value: "socks5h", label: "SOCKS5H" },
+];
 
 function normalizeFiles(items: CPARemoteFile[]) {
   const seen = new Set<string>();
@@ -73,6 +83,17 @@ export default function SettingsPage() {
 
   const [pools, setPools] = useState<CPAPool[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingProxy, setIsLoadingProxy] = useState(true);
+  const [isSavingProxy, setIsSavingProxy] = useState(false);
+  const [proxyEnabled, setProxyEnabled] = useState(false);
+  const [proxyScheme, setProxyScheme] = useState<ProxyScheme>("http");
+  const [proxyHost, setProxyHost] = useState("");
+  const [proxyPort, setProxyPort] = useState("");
+  const [proxyUsername, setProxyUsername] = useState("");
+  const [proxyPassword, setProxyPassword] = useState("");
+  const [proxyHasPassword, setProxyHasPassword] = useState(false);
+  const [clearSavedProxyPassword, setClearSavedProxyPassword] = useState(false);
+  const [showProxyPassword, setShowProxyPassword] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPool, setEditingPool] = useState<CPAPool | null>(null);
@@ -94,6 +115,18 @@ export default function SettingsPage() {
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>("100");
   const [isStartingImport, setIsStartingImport] = useState(false);
 
+  const applyProxySettings = (settings: ProxySettings) => {
+    setProxyEnabled(settings.enabled);
+    setProxyScheme(settings.scheme);
+    setProxyHost(settings.host);
+    setProxyPort(settings.port ? String(settings.port) : "");
+    setProxyUsername(settings.username);
+    setProxyPassword("");
+    setProxyHasPassword(settings.has_password);
+    setClearSavedProxyPassword(false);
+    setShowProxyPassword(false);
+  };
+
   const loadPools = async () => {
     setIsLoading(true);
     try {
@@ -106,12 +139,24 @@ export default function SettingsPage() {
     }
   };
 
+  const loadProxy = async () => {
+    setIsLoadingProxy(true);
+    try {
+      const proxyData = await fetchProxySettings();
+      applyProxySettings(proxyData.proxy);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "加载代理设置失败");
+    } finally {
+      setIsLoadingProxy(false);
+    }
+  };
+
   useEffect(() => {
     if (didLoadRef.current) {
       return;
     }
     didLoadRef.current = true;
-    void loadPools();
+    void Promise.allSettled([loadPools(), loadProxy()]);
   }, []);
 
   useEffect(() => {
@@ -294,6 +339,70 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSaveProxy = async () => {
+    const host = proxyHost.trim();
+    const portText = proxyPort.trim();
+    const username = proxyUsername.trim();
+    const hasCustomFields = Boolean(host || portText || username || proxyPassword || clearSavedProxyPassword);
+
+    if ((proxyEnabled || hasCustomFields) && !host) {
+      toast.error("请输入代理主机");
+      return;
+    }
+    if ((proxyEnabled || hasCustomFields) && !portText) {
+      toast.error("请输入代理端口");
+      return;
+    }
+
+    const port = portText ? Number(portText) : null;
+    if (portText && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+      toast.error("代理端口必须在 1-65535 之间");
+      return;
+    }
+
+    if (proxyPassword && !username) {
+      toast.error("填写代理密码时请同时填写用户名");
+      return;
+    }
+
+    if (!proxyPassword && proxyHasPassword && !clearSavedProxyPassword && !username && host) {
+      toast.error("当前已保存代理密码，如需移除认证，请勾选清空已保存密码");
+      return;
+    }
+
+    setIsSavingProxy(true);
+    try {
+      const payload: {
+        enabled: boolean;
+        scheme: ProxyScheme;
+        host: string;
+        port: number | null;
+        username: string;
+        password?: string;
+      } = {
+        enabled: proxyEnabled,
+        scheme: proxyScheme,
+        host,
+        port,
+        username,
+      };
+
+      if (proxyPassword) {
+        payload.password = proxyPassword;
+      } else if (clearSavedProxyPassword) {
+        payload.password = "";
+      }
+
+      const data = await updateProxySettings(payload);
+      applyProxySettings(data.proxy);
+      toast.success(proxyEnabled ? "代理已保存并启用" : "代理设置已保存");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存代理设置失败");
+    } finally {
+      setIsSavingProxy(false);
+    }
+  };
+
   return (
     <>
       <section className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -304,6 +413,165 @@ export default function SettingsPage() {
       </section>
 
       <section className="space-y-6">
+        <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
+          <CardContent className="space-y-6 p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-stone-100">
+                  <Link2 className="size-5 text-stone-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold tracking-tight">全局代理</h2>
+                  <p className="text-sm text-stone-500">
+                    为所有出站请求配置 HTTP / HTTPS / SOCKS5 / SOCKS5H 代理，保存后新请求会立即生效。
+                  </p>
+                </div>
+              </div>
+              <Badge
+                variant={proxyEnabled ? "success" : "secondary"}
+                className="w-fit rounded-md px-2.5 py-1"
+              >
+                {proxyEnabled ? "已启用" : "未启用"}
+              </Badge>
+            </div>
+
+            {isLoadingProxy ? (
+              <div className="flex items-center justify-center py-10">
+                <LoaderCircle className="size-5 animate-spin text-stone-400" />
+              </div>
+            ) : (
+              <>
+                <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
+                  <label className="flex items-start gap-3">
+                    <Checkbox checked={proxyEnabled} onCheckedChange={(checked) => setProxyEnabled(checked === true)} />
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium text-stone-700">启用全局代理</div>
+                      <p className="text-sm leading-6 text-stone-500">
+                        影响账号额度刷新、图片生成/编辑，以及 CPA 远程同步等所有后端出站请求。
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-stone-700">代理协议</label>
+                    <Select value={proxyScheme} onValueChange={(value) => setProxyScheme(value as ProxyScheme)}>
+                      <SelectTrigger className="h-11 rounded-xl border-stone-200 bg-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PROXY_SCHEME_OPTIONS.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-stone-700">代理主机</label>
+                    <Input
+                      value={proxyHost}
+                      onChange={(event) => setProxyHost(event.target.value)}
+                      placeholder="127.0.0.1 或 proxy.example.com"
+                      className="h-11 rounded-xl border-stone-200 bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-stone-700">代理端口</label>
+                    <Input
+                      inputMode="numeric"
+                      value={proxyPort}
+                      onChange={(event) => setProxyPort(event.target.value.replace(/[^\d]/g, ""))}
+                      placeholder="7890"
+                      className="h-11 rounded-xl border-stone-200 bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-stone-700">用户名（可选）</label>
+                    <Input
+                      value={proxyUsername}
+                      onChange={(event) => setProxyUsername(event.target.value)}
+                      placeholder="代理认证用户名"
+                      className="h-11 rounded-xl border-stone-200 bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="flex items-center gap-1.5 text-sm font-medium text-stone-700">
+                      <Unplug className="size-3.5" />
+                      密码（可选）
+                    </label>
+                    <div className="relative">
+                      <Input
+                        type={showProxyPassword ? "text" : "password"}
+                        value={proxyPassword}
+                        onChange={(event) => {
+                          setProxyPassword(event.target.value);
+                          if (event.target.value) {
+                            setClearSavedProxyPassword(false);
+                          }
+                        }}
+                        placeholder={proxyHasPassword ? "留空则保留已保存密码" : "代理认证密码"}
+                        className="h-11 rounded-xl border-stone-200 bg-white pr-10"
+                      />
+                      <button
+                        type="button"
+                        className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-400 transition hover:text-stone-600"
+                        onClick={() => setShowProxyPassword((prev) => !prev)}
+                      >
+                        {showProxyPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </button>
+                    </div>
+
+                    {proxyHasPassword ? (
+                      <label className="flex items-center gap-2 text-sm text-stone-500">
+                        <Checkbox
+                          checked={clearSavedProxyPassword}
+                          onCheckedChange={(checked) => {
+                            const nextChecked = checked === true;
+                            setClearSavedProxyPassword(nextChecked);
+                            if (nextChecked) {
+                              setProxyPassword("");
+                            }
+                          }}
+                        />
+                        清空已保存密码
+                      </label>
+                    ) : (
+                      <p className="text-sm text-stone-400">未保存代理密码。</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-500">
+                  <p className="font-medium text-stone-600">使用说明</p>
+                  <ul className="mt-1 list-inside list-disc space-y-0.5">
+                    <li>主机字段只填写 IP 或域名，不要带 `http://` 或 `socks5://` 前缀。</li>
+                    <li>如果代理需要认证，可以填写用户名和密码；密码会保存在后端，不会从接口明文回显。</li>
+                    <li>关闭开关后会停止使用代理，但已填写的参数会保留，方便后续再次启用。</li>
+                  </ul>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+                    onClick={() => void handleSaveProxy()}
+                    disabled={isSavingProxy}
+                  >
+                    {isSavingProxy ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+                    保存代理
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
         <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
           <CardContent className="space-y-6 p-6">
             <div className="flex items-start justify-between">

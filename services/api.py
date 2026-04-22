@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Event, Thread
+from typing import Literal
 
 from fastapi import APIRouter, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -14,8 +15,8 @@ from services.account_service import account_service
 from services.chatgpt_service import ChatGPTService
 from services.config import config
 from services.cpa_service import cpa_config, cpa_import_service, list_remote_files
-
 from services.image_service import ImageGenerationError
+from services.proxy_service import proxy_settings
 from services.version import get_app_version
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -84,6 +85,15 @@ class CPAPoolUpdateRequest(BaseModel):
 
 class CPAImportRequest(BaseModel):
     names: list[str] = Field(default_factory=list)
+
+
+class ProxySettingsUpdateRequest(BaseModel):
+    enabled: bool = False
+    scheme: Literal["http", "https", "socks5", "socks5h"] = "http"
+    host: str = ""
+    port: int | None = Field(default=None, ge=1, le=65535)
+    username: str = ""
+    password: str | None = None
 
 
 def build_model_item(model_id: str) -> dict[str, object]:
@@ -208,6 +218,26 @@ def create_app() -> FastAPI:
     @router.get("/version")
     async def get_version():
         return {"version": app_version}
+
+    @router.get("/api/settings/proxy")
+    async def get_proxy_settings(authorization: str | None = Header(default=None)):
+        require_auth_key(authorization)
+        return {"proxy": proxy_settings.get_settings()}
+
+    @router.post("/api/settings/proxy")
+    async def save_proxy_settings(
+            body: ProxySettingsUpdateRequest,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        updates = body.model_dump()
+        if "password" not in body.model_fields_set:
+            updates.pop("password", None)
+        try:
+            settings = proxy_settings.update_settings(updates)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        return {"proxy": settings}
 
     @router.get("/api/accounts")
     async def get_accounts(authorization: str | None = Header(default=None)):
