@@ -47,6 +47,7 @@ import {
   type CPAPool,
   type CPARemoteFile,
 } from "@/lib/api";
+import { Sub2APIConnections } from "@/app/settings/components/sub2api-connections";
 
 const PAGE_SIZE_OPTIONS = ["50", "100", "200"] as const;
 
@@ -437,6 +438,8 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        <Sub2APIConnections />
       </section>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
