@@ -15,3 +15,5 @@ edit
 test
 
 docker-compose-local.yml
+
+.claude/settings.local.json

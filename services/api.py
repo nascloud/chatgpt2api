@@ -13,6 +13,14 @@ from services.account_service import account_service
 from services.chatgpt_service import ChatGPTService
 from services.config import config
 from services.cpa_service import cpa_config, cpa_import_service, list_remote_files
+from services.sub2api_service import (
+    list_remote_accounts as sub2api_list_remote_accounts,
+    list_remote_groups as sub2api_list_remote_groups,
+    sub2api_config,
+    sub2api_import_service,
+)
+
+
 from services.image_service import ImageGenerationError
 from services.version import get_app_version
 
@@ -87,6 +95,37 @@ class CPAImportRequest(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
+class Sub2APIServerCreateRequest(BaseModel):
+    name: str = ""
+    base_url: str = ""
+    email: str = ""
+    password: str = ""
+    api_key: str = ""
+    group_id: str = ""
+
+
+class Sub2APIServerUpdateRequest(BaseModel):
+    name: str | None = None
+    base_url: str | None = None
+    email: str | None = None
+    password: str | None = None
+    api_key: str | None = None
+    group_id: str | None = None
+
+
+class Sub2APIImportRequest(BaseModel):
+    account_ids: list[str] = Field(default_factory=list)
+
+
+class ProxyUpdateRequest(BaseModel):
+    enabled: bool | None = None
+    url: str | None = None
+
+
+class ProxyTestRequest(BaseModel):
+    url: str = ""
+
+
 
 def build_model_item(model_id: str) -> dict[str, object]:
     return {
@@ -109,6 +148,21 @@ def sanitize_cpa_pool(pool: dict | None) -> dict | None:
 
 def sanitize_cpa_pools(pools: list[dict]) -> list[dict]:
     return [sanitized for pool in pools if (sanitized := sanitize_cpa_pool(pool)) is not None]
+
+
+_SUB2API_HIDDEN_FIELDS = {"password", "api_key"}
+
+
+def sanitize_sub2api_server(server: dict | None) -> dict | None:
+    if not isinstance(server, dict):
+        return None
+    sanitized = {key: value for key, value in server.items() if key not in _SUB2API_HIDDEN_FIELDS}
+    sanitized["has_api_key"] = bool(str(server.get("api_key") or "").strip())
+    return sanitized
+
+
+def sanitize_sub2api_servers(servers: list[dict]) -> list[dict]:
+    return [sanitized for server in servers if (sanitized := sanitize_sub2api_server(server)) is not None]
 
 
 def extract_bearer_token(authorization: str | None) -> str:
@@ -419,6 +473,153 @@ def create_app() -> FastAPI:
         if pool is None:
             raise HTTPException(status_code=404, detail={"error": "pool not found"})
         return {"import_job": pool.get("import_job")}
+
+    # ── Sub2API endpoints ─────────────────────────────────────────────
+
+    @router.get("/api/sub2api/servers")
+    async def list_sub2api_servers(authorization: str | None = Header(default=None)):
+        require_auth_key(authorization)
+        return {"servers": sanitize_sub2api_servers(sub2api_config.list_servers())}
+
+    @router.post("/api/sub2api/servers")
+    async def create_sub2api_server(
+            body: Sub2APIServerCreateRequest,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        if not body.base_url.strip():
+            raise HTTPException(status_code=400, detail={"error": "base_url is required"})
+        has_login = body.email.strip() and body.password.strip()
+        has_api_key = bool(body.api_key.strip())
+        if not has_login and not has_api_key:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "email+password or api_key is required"},
+            )
+        server = sub2api_config.add_server(
+            name=body.name,
+            base_url=body.base_url,
+            email=body.email,
+            password=body.password,
+            api_key=body.api_key,
+            group_id=body.group_id,
+        )
+        return {
+            "server": sanitize_sub2api_server(server),
+            "servers": sanitize_sub2api_servers(sub2api_config.list_servers()),
+        }
+
+    @router.post("/api/sub2api/servers/{server_id}")
+    async def update_sub2api_server(
+            server_id: str,
+            body: Sub2APIServerUpdateRequest,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        server = sub2api_config.update_server(server_id, body.model_dump(exclude_none=True))
+        if server is None:
+            raise HTTPException(status_code=404, detail={"error": "server not found"})
+        return {
+            "server": sanitize_sub2api_server(server),
+            "servers": sanitize_sub2api_servers(sub2api_config.list_servers()),
+        }
+
+    @router.delete("/api/sub2api/servers/{server_id}")
+    async def delete_sub2api_server(
+            server_id: str,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        if not sub2api_config.delete_server(server_id):
+            raise HTTPException(status_code=404, detail={"error": "server not found"})
+        return {"servers": sanitize_sub2api_servers(sub2api_config.list_servers())}
+
+    @router.get("/api/sub2api/servers/{server_id}/groups")
+    async def sub2api_server_groups(
+            server_id: str,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        server = sub2api_config.get_server(server_id)
+        if server is None:
+            raise HTTPException(status_code=404, detail={"error": "server not found"})
+        try:
+            groups = await run_in_threadpool(sub2api_list_remote_groups, server)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
+        return {"server_id": server_id, "groups": groups}
+
+    @router.get("/api/sub2api/servers/{server_id}/accounts")
+    async def sub2api_server_accounts(
+            server_id: str,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        server = sub2api_config.get_server(server_id)
+        if server is None:
+            raise HTTPException(status_code=404, detail={"error": "server not found"})
+        try:
+            accounts = await run_in_threadpool(sub2api_list_remote_accounts, server)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
+        return {"server_id": server_id, "accounts": accounts}
+
+    @router.post("/api/sub2api/servers/{server_id}/import")
+    async def sub2api_server_import(
+            server_id: str,
+            body: Sub2APIImportRequest,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        server = sub2api_config.get_server(server_id)
+        if server is None:
+            raise HTTPException(status_code=404, detail={"error": "server not found"})
+        try:
+            job = sub2api_import_service.start_import(server, body.account_ids)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        return {"import_job": job}
+
+    @router.get("/api/sub2api/servers/{server_id}/import")
+    async def sub2api_server_import_progress(
+            server_id: str,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        server = sub2api_config.get_server(server_id)
+        if server is None:
+            raise HTTPException(status_code=404, detail={"error": "server not found"})
+        return {"import_job": server.get("import_job")}
+
+    # ── Upstream proxy endpoints ─────────────────────────────────────
+
+    @router.get("/api/proxy")
+    async def get_proxy(authorization: str | None = Header(default=None)):
+        require_auth_key(authorization)
+        return {"proxy": proxy_config.get_public()}
+
+    @router.post("/api/proxy")
+    async def update_proxy(body: ProxyUpdateRequest, authorization: str | None = Header(default=None)):
+        require_auth_key(authorization)
+        try:
+            proxy_config.update(enabled=body.enabled, url=body.url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        return {"proxy": proxy_config.get_public()}
+
+    @router.post("/api/proxy/test")
+    async def test_proxy_endpoint(
+            body: ProxyTestRequest,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        candidate = (body.url or "").strip()
+        if not candidate:
+            candidate = (proxy_config.get().get("url") or "").strip()
+        if not candidate:
+            raise HTTPException(status_code=400, detail={"error": "proxy url is required"})
+        result = await run_in_threadpool(test_proxy, candidate)
+        return {"result": result}
 
     app.include_router(router)
 
