@@ -3,7 +3,6 @@ import { httpRequest } from "@/lib/request";
 export type AccountType = "Free" | "Plus" | "Pro" | "Team";
 export type AccountStatus = "正常" | "限流" | "异常" | "禁用";
 export type ImageModel = "gpt-image-1" | "gpt-image-2";
-export type ProxyScheme = "http" | "https" | "socks5" | "socks5h";
 
 export type Account = {
   id: string;
@@ -49,13 +48,11 @@ type AccountUpdateResponse = {
   items: Account[];
 };
 
-export type ProxySettings = {
-  enabled: boolean;
-  scheme: ProxyScheme;
-  host: string;
-  port: number | null;
-  username: string;
-  has_password: boolean;
+export type SettingsConfig = {
+  proxy: string;
+  "auth-key"?: string;
+  refresh_account_interval_minute?: number;
+  [key: string]: unknown;
 };
 
 export async function login(authKey: string) {
@@ -147,19 +144,12 @@ export async function editImage(files: File | File[], prompt: string, model: Ima
   );
 }
 
-export async function fetchProxySettings() {
-  return httpRequest<{ proxy: ProxySettings }>("/api/settings/proxy");
+export async function fetchSettingsConfig() {
+  return httpRequest<{ config: SettingsConfig }>("/api/settings");
 }
 
-export async function updateProxySettings(settings: {
-  enabled: boolean;
-  scheme: ProxyScheme;
-  host: string;
-  port: number | null;
-  username: string;
-  password?: string;
-}) {
-  return httpRequest<{ proxy: ProxySettings }>("/api/settings/proxy", {
+export async function updateSettingsConfig(settings: SettingsConfig) {
+  return httpRequest<{ config: SettingsConfig }>("/api/settings", {
     method: "POST",
     body: settings,
   });
