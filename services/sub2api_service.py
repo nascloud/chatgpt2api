@@ -325,7 +325,6 @@ def list_remote_groups(server: dict) -> list[dict]:
                 f"{base_url.rstrip('/')}/api/v1/admin/groups",
                 headers=headers,
                 params={
-                    "platform": "openai",
                     "page": page,
                     "page_size": 200,
                 },
@@ -349,6 +348,7 @@ def list_remote_groups(server: dict) -> list[dict]:
                     "id": str(group_id),
                     "name": _clean(group.get("name")),
                     "description": _clean(group.get("description")),
+                    "platform": _clean(group.get("platform")),
                     "status": _clean(group.get("status")),
                     "account_count": int(group.get("account_count") or 0),
                     "active_account_count": int(group.get("active_account_count") or 0),

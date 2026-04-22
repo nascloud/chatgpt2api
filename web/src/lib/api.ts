@@ -233,6 +233,7 @@ export type Sub2APIRemoteGroup = {
   id: string;
   name: string;
   description: string;
+  platform: string;
   status: string;
   account_count: number;
   active_account_count: number;

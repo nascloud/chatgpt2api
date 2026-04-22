@@ -205,7 +205,7 @@ export function Sub2APIConnections() {
       const data = await fetchSub2APIServerGroups(editingServer.id);
       setRemoteGroups(data.groups);
       if (data.groups.length === 0) {
-        toast.message("远端没有 platform=openai 的分组");
+        toast.message("远端没有配置分组");
       } else {
         toast.success(`读取到 ${data.groups.length} 个分组`);
       }
@@ -667,8 +667,9 @@ export function Sub2APIConnections() {
                     {remoteGroups.map((group) => (
                       <SelectItem key={group.id} value={group.id}>
                         {group.name || `Group ${group.id}`}
+                        {group.platform ? `（${group.platform}）` : ""}
                         {group.account_count
-                          ? `（${group.active_account_count}/${group.account_count}）`
+                          ? ` · ${group.active_account_count}/${group.account_count}`
                           : ""}
                       </SelectItem>
                     ))}
