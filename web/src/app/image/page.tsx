@@ -13,7 +13,7 @@ import {
   deleteImageConversation,
   getImageConversationStats,
   listImageConversations,
-  saveImageConversation,
+  saveImageConversations,
   type ImageConversation,
   type ImageConversationMode,
   type ImageTurn,
@@ -102,6 +102,10 @@ function pickFallbackConversationId(conversations: ImageConversation[]) {
   return activeConversation?.id ?? conversations[0]?.id ?? null;
 }
 
+function sortImageConversations(conversations: ImageConversation[]) {
+  return [...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
 async function recoverConversationHistory(items: ImageConversation[]) {
   const normalized = items.map((conversation) => {
     let changed = false;
@@ -154,11 +158,10 @@ async function recoverConversationHistory(items: ImageConversation[]) {
     };
   });
 
-  await Promise.all(
-    normalized
-      .filter((conversation, index) => conversation !== items[index])
-      .map((conversation) => saveImageConversation(conversation)),
-  );
+  const changedConversations = normalized.filter((conversation, index) => conversation !== items[index]);
+  if (changedConversations.length > 0) {
+    await saveImageConversations(normalized);
+  }
 
   return normalized;
 }
@@ -217,6 +220,7 @@ export default function ImagePage() {
           return;
         }
 
+        conversationsRef.current = normalizedItems;
         setConversations(normalizedItems);
         const storedConversationId =
           typeof window !== "undefined" ? window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY) : null;
@@ -297,27 +301,26 @@ export default function ImagePage() {
   }, [conversations, selectedConversationId]);
 
   const persistConversation = async (conversation: ImageConversation) => {
-    setConversations((prev) => {
-      const next = [conversation, ...prev.filter((item) => item.id !== conversation.id)];
-      return next.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    });
-    await saveImageConversation(conversation);
+    const nextConversations = sortImageConversations([
+      conversation,
+      ...conversationsRef.current.filter((item) => item.id !== conversation.id),
+    ]);
+    conversationsRef.current = nextConversations;
+    setConversations(nextConversations);
+    await saveImageConversations(nextConversations);
   };
 
   const updateConversation = useCallback(
     async (conversationId: string, updater: (current: ImageConversation | null) => ImageConversation) => {
-      let nextConversation: ImageConversation | null = null;
-
-      setConversations((prev) => {
-        const current = prev.find((item) => item.id === conversationId) ?? null;
-        nextConversation = updater(current);
-        const next = [nextConversation, ...prev.filter((item) => item.id !== conversationId)];
-        return next.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      });
-
-      if (nextConversation) {
-        await saveImageConversation(nextConversation);
-      }
+      const current = conversationsRef.current.find((item) => item.id === conversationId) ?? null;
+      const nextConversation = updater(current);
+      const nextConversations = sortImageConversations([
+        nextConversation,
+        ...conversationsRef.current.filter((item) => item.id !== conversationId),
+      ]);
+      conversationsRef.current = nextConversations;
+      setConversations(nextConversations);
+      await saveImageConversations(nextConversations);
     },
     [],
   );
@@ -345,6 +348,7 @@ export default function ImagePage() {
 
   const handleDeleteConversation = async (id: string) => {
     const nextConversations = conversations.filter((item) => item.id !== id);
+    conversationsRef.current = nextConversations;
     setConversations(nextConversations);
     if (selectedConversationId === id) {
       setSelectedConversationId(pickFallbackConversationId(nextConversations));
@@ -357,6 +361,7 @@ export default function ImagePage() {
       const message = error instanceof Error ? error.message : "删除会话失败";
       toast.error(message);
       const items = await listImageConversations();
+      conversationsRef.current = items;
       setConversations(items);
     }
   };
@@ -364,6 +369,7 @@ export default function ImagePage() {
   const handleClearHistory = async () => {
     try {
       await clearImageConversations();
+      conversationsRef.current = [];
       setConversations([]);
       setSelectedConversationId(null);
       resetComposer();

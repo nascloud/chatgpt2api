@@ -53,6 +53,7 @@ const imageConversationStorage = localforage.createInstance({
 });
 
 const IMAGE_CONVERSATIONS_KEY = "items";
+let imageConversationWriteQueue: Promise<void> = Promise.resolve();
 
 function normalizeStoredImage(image: StoredImage): StoredImage {
   if (image.status === "loading" || image.status === "error" || image.status === "success") {
@@ -166,30 +167,62 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
   };
 }
 
-export async function listImageConversations(): Promise<ImageConversation[]> {
+function sortImageConversations(conversations: ImageConversation[]): ImageConversation[] {
+  return [...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function queueImageConversationWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const result = imageConversationWriteQueue.then(operation);
+  imageConversationWriteQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+async function readStoredImageConversations(): Promise<ImageConversation[]> {
   const items =
     (await imageConversationStorage.getItem<Array<ImageConversation & Record<string, unknown>>>(IMAGE_CONVERSATIONS_KEY)) ||
     [];
-  return items.map(normalizeConversation).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return items.map(normalizeConversation);
+}
+
+export async function listImageConversations(): Promise<ImageConversation[]> {
+  return sortImageConversations(await readStoredImageConversations());
+}
+
+export async function saveImageConversations(conversations: ImageConversation[]): Promise<void> {
+  await queueImageConversationWrite(async () => {
+    const normalizedItems = sortImageConversations(conversations.map(normalizeConversation));
+    await imageConversationStorage.setItem(IMAGE_CONVERSATIONS_KEY, normalizedItems);
+  });
 }
 
 export async function saveImageConversation(conversation: ImageConversation): Promise<void> {
-  const items = await listImageConversations();
-  const nextItems = [normalizeConversation(conversation), ...items.filter((item) => item.id !== conversation.id)];
-  nextItems.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  await imageConversationStorage.setItem(IMAGE_CONVERSATIONS_KEY, nextItems);
+  await queueImageConversationWrite(async () => {
+    const items = await readStoredImageConversations();
+    const nextItems = sortImageConversations([
+      normalizeConversation(conversation),
+      ...items.filter((item) => item.id !== conversation.id),
+    ]);
+    await imageConversationStorage.setItem(IMAGE_CONVERSATIONS_KEY, nextItems);
+  });
 }
 
 export async function deleteImageConversation(id: string): Promise<void> {
-  const items = await listImageConversations();
-  await imageConversationStorage.setItem(
-    IMAGE_CONVERSATIONS_KEY,
-    items.filter((item) => item.id !== id),
-  );
+  await queueImageConversationWrite(async () => {
+    const items = await readStoredImageConversations();
+    await imageConversationStorage.setItem(
+      IMAGE_CONVERSATIONS_KEY,
+      items.filter((item) => item.id !== id),
+    );
+  });
 }
 
 export async function clearImageConversations(): Promise<void> {
-  await imageConversationStorage.removeItem(IMAGE_CONVERSATIONS_KEY);
+  await queueImageConversationWrite(async () => {
+    await imageConversationStorage.removeItem(IMAGE_CONVERSATIONS_KEY);
+  });
 }
 
 export function getImageConversationStats(conversation: ImageConversation | null): ImageConversationStats {
