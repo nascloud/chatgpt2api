@@ -7,12 +7,14 @@ import random
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from curl_cffi.requests import Session
 
 from services.account_service import account_service
 from services import proof_of_work
+from services.config import config
 
 
 BASE_URL = "https://chatgpt.com"
@@ -622,6 +624,25 @@ def _download_as_base64(session: Session, download_url: str) -> str:
     return base64.b64encode(response.content).decode("ascii")
 
 
+def _download_and_save_image(session: Session, download_url: str) -> str:
+    """下载图片并保存到本地，返回本地 URL"""
+    response = session.get(download_url, timeout=60)
+    if not response.ok or not response.content:
+        raise ImageGenerationError("download image failed")
+    
+    # 生成唯一文件名
+    file_hash = hashlib.md5(response.content).hexdigest()
+    timestamp = int(time.time())
+    filename = f"{timestamp}_{file_hash}.png"
+    
+    # 保存到本地
+    file_path = config.images_dir / filename
+    file_path.write_bytes(response.content)
+    
+    # 返回本地 URL
+    return f"{config.base_url}/images/{filename}"
+
+
 def _resolve_upstream_model(access_token: str, requested_model: str) -> str:
     requested_model = str(requested_model or "").strip() or "gpt-image-1"
     account = account_service.get_account(access_token) or {}
@@ -687,7 +708,7 @@ def generate_image_result(access_token: str, prompt: str, model: str = DEFAULT_M
         
         # 根据 response_format 返回不同格式
         if response_format == "url":
-            result_data = {"url": download_url, "revised_prompt": prompt}
+            result_data = {"url": _download_and_save_image(session, download_url), "revised_prompt": prompt}
         else:
             result_data = {"b64_json": _download_as_base64(session, download_url), "revised_prompt": prompt}
         
@@ -824,7 +845,7 @@ def edit_image_result(
         
         # 根据 response_format 返回不同格式
         if response_format == "url":
-            result_data = {"url": download_url, "revised_prompt": prompt}
+            result_data = {"url": _download_and_save_image(session, download_url), "revised_prompt": prompt}
         else:
             result_data = {"b64_json": _download_as_base64(session, download_url), "revised_prompt": prompt}
         

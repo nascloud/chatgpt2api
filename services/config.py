@@ -18,6 +18,8 @@ class AppSettings:
     port: int
     accounts_file: Path
     refresh_account_interval_minute: int
+    images_dir: Path
+    base_url: str
 
 
 def _readable_json_file(path: Path, *, name: str) -> Path | None:
@@ -70,6 +72,15 @@ def _load_settings() -> AppSettings:
     refresh_account_interval_minute = cast(
         int, raw_config.get("refresh_account_interval_minute", 60)
     )
+    
+    base_url = str(
+        os.getenv("CHATGPT2API_BASE_URL")
+        or raw_config.get("base_url")
+        or "http://localhost:8000"
+    ).strip().rstrip("/")
+
+    images_dir = DATA_DIR / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
 
     return AppSettings(
         auth_key=auth_key,
@@ -77,6 +88,8 @@ def _load_settings() -> AppSettings:
         port=8000,
         accounts_file=DATA_DIR / "accounts.json",
         refresh_account_interval_minute=refresh_account_interval_minute,
+        images_dir=images_dir,
+        base_url=base_url,
     )
 
 

@@ -8,6 +8,7 @@ from fastapi import APIRouter, FastAPI, File, Form, Header, HTTPException, Uploa
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.account_service import account_service
@@ -404,6 +405,10 @@ def create_app() -> FastAPI:
         return {"import_job": pool.get("import_job")}
 
     app.include_router(router)
+    
+    # 挂载静态图片目录
+    if config.images_dir.exists():
+        app.mount("/images", StaticFiles(directory=str(config.images_dir)), name="images")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_web(full_path: str):
