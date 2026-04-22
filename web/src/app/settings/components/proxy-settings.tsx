@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Eye,
-  EyeOff,
   LoaderCircle,
   PlugZap,
   Save,
@@ -27,7 +25,6 @@ export function ProxySettingsCard() {
   const [settings, setSettings] = useState<ProxySettings>({ enabled: false, url: "" });
   const [formUrl, setFormUrl] = useState("");
   const [formEnabled, setFormEnabled] = useState(false);
-  const [showUrl, setShowUrl] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -147,25 +144,14 @@ export function ProxySettingsCard() {
                 <PlugZap className="size-3.5" />
                 代理地址
               </label>
-              <div className="relative">
-                <Input
-                  type={showUrl ? "text" : "password"}
-                  value={formUrl}
-                  onChange={(event) => setFormUrl(event.target.value)}
-                  placeholder="http://user:pass@host:port 或 socks5://host:port"
-                  className="h-11 rounded-xl border-stone-200 bg-white pr-10 font-mono text-xs"
-                />
-                <button
-                  type="button"
-                  className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-400 transition hover:text-stone-600"
-                  onClick={() => setShowUrl((prev) => !prev)}
-                >
-                  {showUrl ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                </button>
-              </div>
+              <Input
+                value={formUrl}
+                onChange={(event) => setFormUrl(event.target.value)}
+                placeholder="http://user:pass@host:port 或 socks5://host:port"
+                className="h-11 rounded-xl border-stone-200 bg-white font-mono text-xs"
+              />
               <div className="text-xs text-stone-400">
                 支持 <code className="font-mono">http / https / socks4 / socks5 / socks5h</code>。
-                密码部分展示时会被遮蔽（<code className="font-mono">***</code>），回传时保持原样即可保留密码。
               </div>
             </div>
 

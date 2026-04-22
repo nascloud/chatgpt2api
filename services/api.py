@@ -580,15 +580,8 @@ def create_app() -> FastAPI:
     @router.post("/api/proxy")
     async def update_proxy(body: ProxyUpdateRequest, authorization: str | None = Header(default=None)):
         require_auth_key(authorization)
-
-        # If the client echoes back the masked form (contains `***@`), treat it as "no change"
-        # so the stored password is preserved.
-        url = body.url
-        if url is not None and "***@" in url:
-            url = None
-
         try:
-            proxy_config.update(enabled=body.enabled, url=url)
+            proxy_config.update(enabled=body.enabled, url=body.url)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
         return {"proxy": proxy_config.get_public()}
@@ -600,8 +593,7 @@ def create_app() -> FastAPI:
     ):
         require_auth_key(authorization)
         candidate = (body.url or "").strip()
-        if not candidate or "***@" in candidate:
-            # Fall back to the stored url when caller omits it or sent the masked form.
+        if not candidate:
             candidate = (proxy_config.get().get("url") or "").strip()
         if not candidate:
             raise HTTPException(status_code=400, detail={"error": "proxy url is required"})

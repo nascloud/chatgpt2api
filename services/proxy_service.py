@@ -11,7 +11,7 @@ import os
 import time
 from pathlib import Path
 from threading import Lock
-from urllib.parse import quote, urlparse, urlunparse
+from urllib.parse import urlparse
 
 from curl_cffi.requests import Session
 
@@ -35,23 +35,6 @@ def _is_valid_proxy_url(url: str) -> bool:
     if parsed.scheme not in {"http", "https", "socks4", "socks5", "socks5h"}:
         return False
     return bool(parsed.hostname)
-
-
-def _mask_proxy_url(url: str) -> str:
-    """Return a display-safe version of the proxy URL where password is hidden."""
-    if not url:
-        return ""
-    try:
-        parsed = urlparse(url)
-    except Exception:
-        return url
-    if not parsed.password:
-        return url
-    user = parsed.username or ""
-    host = parsed.hostname or ""
-    port = f":{parsed.port}" if parsed.port else ""
-    netloc = f"{quote(user, safe='')}:***@{host}{port}"
-    return urlunparse(parsed._replace(netloc=netloc))
 
 
 class ProxyConfig:
@@ -92,11 +75,10 @@ class ProxyConfig:
             return dict(self._state)
 
     def get_public(self) -> dict:
-        """Return a masked representation safe to expose over the API."""
         state = self.get()
         return {
             "enabled": bool(state.get("enabled")),
-            "url": _mask_proxy_url(_clean(state.get("url"))),
+            "url": _clean(state.get("url")),
         }
 
     def update(self, *, enabled: bool | None, url: str | None) -> dict:
