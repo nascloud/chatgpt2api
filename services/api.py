@@ -14,6 +14,7 @@ from services.account_service import account_service
 from services.chatgpt_service import ChatGPTService
 from services.config import config
 from services.cpa_service import cpa_config, cpa_import_service, list_remote_files
+from services.proxy_service import proxy_config, test_proxy
 from services.sub2api_service import (
     list_remote_accounts as sub2api_list_remote_accounts,
     sub2api_config,
@@ -109,6 +110,15 @@ class Sub2APIServerUpdateRequest(BaseModel):
 
 class Sub2APIImportRequest(BaseModel):
     account_ids: list[str] = Field(default_factory=list)
+
+
+class ProxyUpdateRequest(BaseModel):
+    enabled: bool | None = None
+    url: str | None = None
+
+
+class ProxyTestRequest(BaseModel):
+    url: str = ""
 
 
 def build_model_item(model_id: str) -> dict[str, object]:
@@ -540,6 +550,44 @@ def create_app() -> FastAPI:
         if server is None:
             raise HTTPException(status_code=404, detail={"error": "server not found"})
         return {"import_job": server.get("import_job")}
+
+    # ── Upstream proxy endpoints ─────────────────────────────────────
+
+    @router.get("/api/proxy")
+    async def get_proxy(authorization: str | None = Header(default=None)):
+        require_auth_key(authorization)
+        return {"proxy": proxy_config.get_public()}
+
+    @router.post("/api/proxy")
+    async def update_proxy(body: ProxyUpdateRequest, authorization: str | None = Header(default=None)):
+        require_auth_key(authorization)
+
+        # If the client echoes back the masked form (contains `***@`), treat it as "no change"
+        # so the stored password is preserved.
+        url = body.url
+        if url is not None and "***@" in url:
+            url = None
+
+        try:
+            proxy_config.update(enabled=body.enabled, url=url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        return {"proxy": proxy_config.get_public()}
+
+    @router.post("/api/proxy/test")
+    async def test_proxy_endpoint(
+            body: ProxyTestRequest,
+            authorization: str | None = Header(default=None),
+    ):
+        require_auth_key(authorization)
+        candidate = (body.url or "").strip()
+        if not candidate or "***@" in candidate:
+            # Fall back to the stored url when caller omits it or sent the masked form.
+            candidate = (proxy_config.get().get("url") or "").strip()
+        if not candidate:
+            raise HTTPException(status_code=400, detail={"error": "proxy url is required"})
+        result = await run_in_threadpool(test_proxy, candidate)
+        return {"result": result}
 
     app.include_router(router)
 

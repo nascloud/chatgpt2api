@@ -47,6 +47,7 @@ import {
   type CPAPool,
   type CPARemoteFile,
 } from "@/lib/api";
+import { ProxySettingsCard } from "@/app/settings/components/proxy-settings";
 import { Sub2APIConnections } from "@/app/settings/components/sub2api-connections";
 
 const PAGE_SIZE_OPTIONS = ["50", "100", "200"] as const;
@@ -305,6 +306,8 @@ export default function SettingsPage() {
       </section>
 
       <section className="space-y-6">
+        <ProxySettingsCard />
+
         <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
           <CardContent className="space-y-6 p-6">
             <div className="flex items-start justify-between">

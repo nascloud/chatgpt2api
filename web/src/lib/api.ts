@@ -277,3 +277,35 @@ export async function startSub2APIImport(serverId: string, accountIds: string[])
 export async function fetchSub2APIImportJob(serverId: string) {
   return httpRequest<{ import_job: CPAImportJob | null }>(`/api/sub2api/servers/${serverId}/import`);
 }
+
+// ── Upstream proxy ────────────────────────────────────────────────
+
+export type ProxySettings = {
+  enabled: boolean;
+  url: string;
+};
+
+export type ProxyTestResult = {
+  ok: boolean;
+  status: number;
+  latency_ms: number;
+  error: string | null;
+};
+
+export async function fetchProxy() {
+  return httpRequest<{ proxy: ProxySettings }>("/api/proxy");
+}
+
+export async function updateProxy(updates: { enabled?: boolean; url?: string }) {
+  return httpRequest<{ proxy: ProxySettings }>("/api/proxy", {
+    method: "POST",
+    body: updates,
+  });
+}
+
+export async function testProxy(url?: string) {
+  return httpRequest<{ result: ProxyTestResult }>("/api/proxy/test", {
+    method: "POST",
+    body: { url: url ?? "" },
+  });
+}
