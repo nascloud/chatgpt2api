@@ -198,14 +198,15 @@ def _login(base_url: str, email: str, password: str) -> tuple[str, float]:
     finally:
         session.close()
 
-    if not isinstance(payload, dict):
+    body = _unwrap_envelope(payload)
+    if not isinstance(body, dict):
         raise RuntimeError("sub2api login payload is invalid")
 
-    token = _clean(payload.get("access_token"))
+    token = _clean(body.get("access_token"))
     if not token:
         raise RuntimeError("sub2api login did not return access_token")
 
-    expires_in = int(payload.get("expires_in") or 3600)
+    expires_in = int(body.get("expires_in") or 3600)
     expires_at = time.time() + max(60, expires_in) - _TOKEN_REFRESH_SKEW
     return token, expires_at
 
@@ -244,6 +245,30 @@ def _extract_access_token(credentials: object) -> str:
     return ""
 
 
+def _unwrap_envelope(payload: object) -> object:
+    """Peel sub2api's `{code, message, data}` envelope, returning the inner `data` field
+    when present. Also handles unwrapped responses from older/alt versions."""
+    if isinstance(payload, dict) and "data" in payload and "code" in payload:
+        return payload.get("data")
+    return payload
+
+
+def _extract_paged_items(payload: object) -> tuple[list, int]:
+    """Return (items, total) from a paginated sub2api response.
+
+    Handles both the wrapped shape `{code,data:{items,total,...}}` and a few looser
+    variants (`{data:[...]}`, `[...]`, `{items:[...],total:N}`)."""
+    inner = _unwrap_envelope(payload)
+    if isinstance(inner, list):
+        return inner, len(inner)
+    if isinstance(inner, dict):
+        for key in ("items", "data", "list"):
+            value = inner.get(key)
+            if isinstance(value, list):
+                return value, int(inner.get("total") or len(value))
+    return [], 0
+
+
 def list_remote_accounts(server: dict) -> list[dict]:
     """Return a flat list of OpenAI OAuth accounts from a sub2api server."""
     base_url = _clean(server.get("base_url"))
@@ -276,8 +301,8 @@ def list_remote_accounts(server: dict) -> list[dict]:
                 raise RuntimeError(f"sub2api list failed: HTTP {response.status_code} {response.text[:200]}")
             payload = response.json()
 
-            data = payload.get("data") if isinstance(payload, dict) else None
-            if not isinstance(data, list) or not data:
+            data, total = _extract_paged_items(payload)
+            if not data:
                 break
 
             for account in data:
@@ -298,7 +323,6 @@ def list_remote_accounts(server: dict) -> list[dict]:
                     "has_refresh_token": bool(_clean(credentials.get("refresh_token"))),
                 })
 
-            total = int(payload.get("total") or 0) if isinstance(payload, dict) else 0
             if page * 200 >= total or len(data) < 200:
                 break
             page += 1
@@ -334,8 +358,8 @@ def list_remote_groups(server: dict) -> list[dict]:
                 raise RuntimeError(f"sub2api groups failed: HTTP {response.status_code} {response.text[:200]}")
             payload = response.json()
 
-            data = payload.get("data") if isinstance(payload, dict) else None
-            if not isinstance(data, list) or not data:
+            data, total = _extract_paged_items(payload)
+            if not data:
                 break
 
             for group in data:
@@ -354,7 +378,6 @@ def list_remote_groups(server: dict) -> list[dict]:
                     "active_account_count": int(group.get("active_account_count") or 0),
                 })
 
-            total = int(payload.get("total") or 0) if isinstance(payload, dict) else 0
             if page * 200 >= total or len(data) < 200:
                 break
             page += 1
@@ -382,9 +405,8 @@ def _fetch_access_token_for_account(server: dict, account_id: str) -> tuple[str,
     finally:
         session.close()
 
-    account = payload.get("data") if isinstance(payload, dict) else None
+    account = _unwrap_envelope(payload)
     if not isinstance(account, dict):
-        # Some sub2api versions return the object directly.
         account = payload if isinstance(payload, dict) else {}
     credentials = account.get("credentials") if isinstance(account.get("credentials"), dict) else {}
     access_token = _extract_access_token(credentials)
