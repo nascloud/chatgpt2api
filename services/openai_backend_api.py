@@ -13,6 +13,7 @@ from curl_cffi import requests
 from PIL import Image
 
 from services.account_service import account_service
+from services.config import config
 from services.proxy_service import proxy_settings
 from utils.helper import build_chat_image_markdown_content, ensure_ok, new_uuid, parse_sse_lines
 from utils.log import logger
@@ -607,7 +608,7 @@ class OpenAIBackendAPI:
             if file_ids:
                 return file_ids, sediment_ids
             if sediment_ids:
-                last_sediment_ids = sediment_ids
+                return [], sediment_ids
             time.sleep(4)
         return [], last_sediment_ids
 
@@ -748,7 +749,7 @@ class OpenAIBackendAPI:
         conversation_id = sse_result["conversation_id"]
         file_ids = list(sse_result["file_ids"])
         sediment_ids = list(sse_result["sediment_ids"])
-        if conversation_id:
+        if conversation_id and not file_ids and not sediment_ids:
             polled_file_ids, polled_sediment_ids = self._poll_image_results(conversation_id)
             file_ids.extend([item for item in polled_file_ids if item not in file_ids])
             sediment_ids.extend([item for item in polled_sediment_ids if item not in sediment_ids])
@@ -1019,7 +1020,7 @@ class OpenAIBackendAPI:
         finally:
             sse.close()
 
-        if conversation_id:
+        if conversation_id and not file_ids and not sediment_ids:
             polled_file_ids, polled_sediment_ids = self._poll_image_results(conversation_id)
             self._append_unique(file_ids, polled_file_ids)
             self._append_unique(sediment_ids, polled_sediment_ids)

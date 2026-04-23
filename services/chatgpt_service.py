@@ -95,7 +95,7 @@ class ChatGPTService:
         return encoded_images
 
     def list_models(self) -> dict[str, object]:
-        result = self._new_backend(self._get_text_access_token()).list_models()
+        result = self._new_backend().list_models()
         data = result.get("data")
         if not isinstance(data, list):
             return result
