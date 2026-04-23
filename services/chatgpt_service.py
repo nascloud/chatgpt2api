@@ -14,6 +14,7 @@ from services.account_service import AccountService
 from services.config import config
 from services.openai_backend_api import CODEX_IMAGE_MODEL, OpenAIBackendAPI
 from utils.helper import (
+    IMAGE_MODELS,
     extract_chat_image,
     extract_chat_prompt,
     extract_image_from_message_content,
@@ -90,7 +91,24 @@ class ChatGPTService:
         return encoded_images
 
     def list_models(self) -> dict[str, object]:
-        return self._new_backend().list_models()
+        result = self._new_backend().list_models()
+        data = result.get("data")
+        if not isinstance(data, list):
+            return result
+        seen = {str(item.get("id") or "").strip() for item in data if isinstance(item, dict)}
+        for model in sorted(IMAGE_MODELS):
+            if model in seen:
+                continue
+            data.append({
+                "id": model,
+                "object": "model",
+                "created": 0,
+                "owned_by": "chatgpt2api",
+                "permission": [],
+                "root": model,
+                "parent": None,
+            })
+        return result
 
     @staticmethod
     def _chat_messages_from_body(body: dict[str, object]) -> list[dict[str, object]]:
@@ -118,17 +136,22 @@ class ChatGPTService:
         if isinstance(input_value, dict):
             messages.append({
                 "role": str(input_value.get("role") or "user"),
-                "content": input_value.get("content") or "",
+                "content": extract_response_prompt([input_value]) or input_value.get("content") or "",
             })
             return messages
 
         if isinstance(input_value, list):
+            if all(isinstance(item, dict) and item.get("type") for item in input_value):
+                text = extract_response_prompt(input_value)
+                if text:
+                    messages.append({"role": "user", "content": text})
+                return messages
             for item in input_value:
                 if not isinstance(item, dict):
                     continue
                 messages.append({
                     "role": str(item.get("role") or "user"),
-                    "content": item.get("content") or "",
+                    "content": extract_response_prompt([item]) or item.get("content") or "",
                 })
             return messages
 
