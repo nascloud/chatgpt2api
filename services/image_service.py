@@ -24,7 +24,7 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/131.0.0.0 Safari/537.36"
 )
-DEFAULT_MODEL = "gpt-4o"
+DEFAULT_MODEL = "auto"
 MAX_POW_ATTEMPTS = 500000
 
 _CORES = [16, 24, 32]
