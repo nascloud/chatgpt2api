@@ -36,16 +36,19 @@ docker compose up -d
 - 兼容 `POST /v1/images/edits` 图片编辑接口
 - 兼容面向图片场景的 `POST /v1/chat/completions`
 - 兼容面向图片场景的 `POST /v1/responses`
-- `GET /v1/models` 返回 `gpt-image-1` 与 `gpt-image-2`
+- `GET /v1/models` 返回 `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、
+  `gpt-5-mini`
 - 支持通过 `n` 返回多张生成结果
+- 支持 Codex 中的画图接口逆向，仅 `Plus` / `Team` / `Pro` 订阅可用，模型别名为 `codex-gpt-image-2`，如有需要可自行在其他场景映射回 `gpt-image-2`，用于和官网画图区分；也就意味着同一账号会同时有官网和 Codex 两份生图额度
 
 ### 在线画图功能
 
 - 内置在线画图工作台，支持生成、图片编辑与多图组图编辑
-- 支持 `gpt-image-1` / `gpt-image-2` 模型选择
+- 支持 `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、`gpt-5-mini` 模型选择
 - 编辑模式支持参考图上传
 - 前端支持多图生成交互
 - 本地保存图片会话历史，支持回看、删除和清空
+- 支持服务端缓存图片URL
 
 ### 号池管理功能
 
@@ -60,7 +63,7 @@ docker compose up -d
 
 ### 实验性 / 规划中
 
-- `gpt-image-2` 仍在灰度中，部分能力仍在完善
+- `/v1/complete` 文本补全与流式输出已实现，但仍在测试，目前会出现对话重复的问题，请谨慎测试使用
 - 详细状态说明见：[功能清单](./docs/feature-status.en.md)
 
 ## Screenshots
@@ -73,13 +76,17 @@ docker compose up -d
 
 ![image](assets/image_edit.png)
 
-Cherry Studio 中使用：
+Cherry Studio 中使用，支持作为绘图接口接入：
 
 ![image](assets/chery_studio.png)
 
 号池管理：
 
 ![image](assets/account_pool.png)
+
+New Api 接入：
+
+![image](assets/new_api.png)
 
 ## API
 
@@ -104,10 +111,10 @@ curl http://localhost:8000/v1/models \
 <summary>说明</summary>
 <br>
 
-| 字段   | 说明                                       |
-|:-----|:-----------------------------------------|
-| 返回模型 | 当前返回 `gpt-image-1`、`gpt-image-2`         |
-| 注意事项 | `gpt-image-2` 当前仍处于灰度 / 实验状态，不保证实际效果完全稳定 |
+| 字段   | 说明                                                                                                         |
+|:-----|:-----------------------------------------------------------------------------------------------------------|
+| 返回模型 | `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、`gpt-5-mini` |
+| 接入场景 | 可接入 Cherry Studio、New API 等上游或客户端                                                                          |
 
 <br>
 </details>
@@ -124,7 +131,7 @@ curl http://localhost:8000/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <auth-key>" \
   -d '{
-    "model": "gpt-image-1",
+    "model": "gpt-image-2",
     "prompt": "一只漂浮在太空里的猫",
     "n": 1,
     "response_format": "b64_json"
@@ -137,7 +144,7 @@ curl http://localhost:8000/v1/images/generations \
 
 | 字段                | 说明                                                 |
 |:------------------|:---------------------------------------------------|
-| `model`           | 图片模型，当前可用值以 `/v1/models` 返回结果为准，推荐使用 `gpt-image-1` |
+| `model`           | 图片模型，当前可用值以 `/v1/models` 返回结果为准，推荐使用 `gpt-image-2` |
 | `prompt`          | 图片生成提示词                                            |
 | `n`               | 生成数量，当前后端限制为 `1-4`                                 |
 | `response_format` | 当前请求模型中包含该字段，默认值为 `b64_json`                       |
@@ -155,7 +162,7 @@ OpenAI 兼容图片编辑接口，用于上传图片并生成编辑结果。
 ```bash
 curl http://localhost:8000/v1/images/edits \
   -H "Authorization: Bearer <auth-key>" \
-  -F "model=gpt-image-1" \
+  -F "model=gpt-image-2" \
   -F "prompt=把这张图改成赛博朋克夜景风格" \
   -F "n=1" \
   -F "image=@./input.png"
@@ -167,7 +174,7 @@ curl http://localhost:8000/v1/images/edits \
 
 | 字段       | 说明                                  |
 |:---------|:------------------------------------|
-| `model`  | 图片模型，推荐使用 `gpt-image-1`             |
+| `model`  | 图片模型， `gpt-image-2`                 |
 | `prompt` | 图片编辑提示词                             |
 | `n`      | 生成数量，当前后端限制为 `1-4`                  |
 | `image`  | 需要编辑的图片文件，使用 multipart/form-data 上传 |
@@ -187,7 +194,7 @@ curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <auth-key>" \
   -d '{
-    "model": "gpt-image-1",
+    "model": "gpt-image-2",
     "messages": [
       {
         "role": "user",
@@ -202,12 +209,12 @@ curl http://localhost:8000/v1/chat/completions \
 <summary>字段说明</summary>
 <br>
 
-| 字段         | 说明                   |
-|:-----------|:---------------------|
-| `model`    | 图片模型，默认按图片生成场景处理     |
-| `messages` | 消息数组，需要是图片相关请求内容     |
-| `n`        | 生成数量，按当前实现解析为图片数量    |
-| `stream`   | 当前不支持，传入 `true` 会被拒绝 |
+| 字段         | 说明                |
+|:-----------|:------------------|
+| `model`    | 图片模型，默认按图片生成场景处理  |
+| `messages` | 消息数组，需要是图片相关请求内容  |
+| `n`        | 生成数量，按当前实现解析为图片数量 |
+| `stream`   | 已实现，但仍在测试         |
 
 <br>
 </details>
@@ -243,7 +250,7 @@ curl http://localhost:8000/v1/responses \
 | `model`  | 响应中会回显该模型字段，但图片生成当前仍走图片生成兼容逻辑 |
 | `input`  | 输入内容，需要能解析出图片生成提示词            |
 | `tools`  | 必须包含 `image_generation` 工具请求  |
-| `stream` | 当前不支持，传入 `true` 会被拒绝          |
+| `stream` | 已实现，但仍在测试                     |
 
 <br>
 </details>
