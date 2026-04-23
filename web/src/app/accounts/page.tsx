@@ -49,6 +49,7 @@ import {
   type AccountStatus,
   type AccountType,
 } from "@/lib/api";
+import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
 
 import { AccountImportDialog } from "./components/account-import-dialog";
@@ -179,7 +180,7 @@ function normalizeAccounts(items: Account[]): Account[] {
   }));
 }
 
-export default function AccountsPage() {
+function AccountsPageContent() {
   const didLoadRef = useRef(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -842,4 +843,18 @@ export default function AccountsPage() {
       </section>
     </>
   );
+}
+
+export default function AccountsPage() {
+  const { isCheckingAuth, session } = useAuthGuard(["admin"]);
+
+  if (isCheckingAuth || !session || session.role !== "admin") {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <LoaderCircle className="size-5 animate-spin text-stone-400" />
+      </div>
+    );
+  }
+
+  return <AccountsPageContent />;
 }

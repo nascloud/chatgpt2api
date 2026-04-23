@@ -8,6 +8,7 @@ from pathlib import Path
 os.environ.setdefault("CHATGPT2API_AUTH_KEY", "test-auth")
 
 from services.account_service import AccountService
+from services.auth_service import AuthService
 from utils.helper import anonymize_token
 
 
@@ -72,6 +73,34 @@ class TokenLogTests(unittest.TestCase):
 
         self.assertTrue(token_ref.startswith("token:"))
         self.assertNotIn(token, token_ref)
+
+
+class AuthServiceTests(unittest.TestCase):
+    def test_create_authenticate_disable_and_delete_user_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            service = AuthService(Path(tmp_dir) / "auth_keys.json")
+
+            item, raw_key = service.create_key(role="user", name="Alice")
+
+            self.assertEqual(item["role"], "user")
+            self.assertEqual(item["name"], "Alice")
+            self.assertTrue(item["enabled"])
+            self.assertTrue(raw_key.startswith("cg2a_user_"))
+
+            authed = service.authenticate(raw_key)
+            self.assertIsNotNone(authed)
+            self.assertEqual(authed["id"], item["id"])
+            self.assertEqual(authed["role"], "user")
+            self.assertIsNotNone(authed["last_used_at"])
+
+            updated = service.update_key(item["id"], {"enabled": False}, role="user")
+            self.assertIsNotNone(updated)
+            self.assertFalse(updated["enabled"])
+            self.assertIsNone(service.authenticate(raw_key))
+
+            self.assertTrue(service.delete_key(item["id"], role="user"))
+            self.assertFalse(service.delete_key(item["id"], role="user"))
+            self.assertEqual(service.list_keys(role="user"), [])
 
 
 if __name__ == "__main__":

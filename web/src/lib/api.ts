@@ -3,6 +3,7 @@ import { httpRequest } from "@/lib/request";
 export type AccountType = "Free" | "Plus" | "ProLite" | "Pro" | "Team";
 export type AccountStatus = "正常" | "限流" | "异常" | "禁用";
 export type ImageModel = "auto" | "gpt-image-1" | "gpt-image-2";
+export type AuthRole = "admin" | "user";
 
 export type Account = {
   id: string;
@@ -52,14 +53,30 @@ type AccountUpdateResponse = {
 export type SettingsConfig = {
   proxy: string;
   base_url?: string;
-  "auth-key"?: string;
   refresh_account_interval_minute?: number | string;
   [key: string]: unknown;
 };
 
+export type LoginResponse = {
+  ok: boolean;
+  version: string;
+  role: AuthRole;
+  subject_id: string;
+  name: string;
+};
+
+export type UserKey = {
+  id: string;
+  name: string;
+  role: "user";
+  enabled: boolean;
+  created_at: string | null;
+  last_used_at: string | null;
+};
+
 export async function login(authKey: string) {
   const normalizedAuthKey = String(authKey || "").trim();
-  return httpRequest<{ ok: boolean }>("/auth/login", {
+  return httpRequest<LoginResponse>("/auth/login", {
     method: "POST",
     body: {},
     headers: {
@@ -160,6 +177,30 @@ export async function updateSettingsConfig(settings: SettingsConfig) {
   return httpRequest<{ config: SettingsConfig }>("/api/settings", {
     method: "POST",
     body: settings,
+  });
+}
+
+export async function fetchUserKeys() {
+  return httpRequest<{ items: UserKey[] }>("/api/auth/users");
+}
+
+export async function createUserKey(name: string) {
+  return httpRequest<{ item: UserKey; key: string; items: UserKey[] }>("/api/auth/users", {
+    method: "POST",
+    body: { name },
+  });
+}
+
+export async function updateUserKey(keyId: string, updates: { enabled?: boolean; name?: string }) {
+  return httpRequest<{ item: UserKey; items: UserKey[] }>(`/api/auth/users/${keyId}`, {
+    method: "POST",
+    body: updates,
+  });
+}
+
+export async function deleteUserKey(keyId: string) {
+  return httpRequest<{ items: UserKey[] }>(`/api/auth/users/${keyId}`, {
+    method: "DELETE",
   });
 }
 
