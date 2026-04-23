@@ -8,7 +8,7 @@ from pathlib import Path
 os.environ.setdefault("CHATGPT2API_AUTH_KEY", "test-auth")
 
 from services.account_service import AccountService
-from services.utils import anonymize_token
+from utils.helper import anonymize_token
 
 
 class AccountCapabilityTests(unittest.TestCase):

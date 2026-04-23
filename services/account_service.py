@@ -13,7 +13,7 @@ from curl_cffi.requests import Session
 
 from services.config import config
 from services.proxy_service import proxy_settings
-from services.utils import anonymize_token
+from utils.helper import anonymize_token
 
 
 class AccountService:
@@ -245,7 +245,7 @@ class AccountService:
         with self._lock:
             tokens = self._list_available_candidate_tokens(excluded_tokens)
             if not tokens:
-                raise RuntimeError(f"No available tokens found in {self.store_file}")
+                raise RuntimeError("no available image quota")
             access_token = tokens[self._index % len(tokens)]
             self._index += 1
             return access_token
@@ -285,6 +285,10 @@ class AccountService:
 
     def next_token(self) -> str:
         return self.get_available_access_token()
+
+    def has_available_account(self) -> bool:
+        with self._lock:
+            return any(self._is_image_account_available(item) for item in self._accounts)
 
     def get_account(self, access_token: str) -> dict | None:
         access_token = self._clean_token(access_token)

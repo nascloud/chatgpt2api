@@ -9,6 +9,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
 CONFIG_FILE = BASE_DIR / "config.json"
+VERSION_FILE = BASE_DIR / "VERSION"
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,14 @@ class ConfigStore:
             or self.data.get("base_url")
             or ""
         ).strip().rstrip("/")
+
+    @property
+    def app_version(self) -> str:
+        try:
+            value = VERSION_FILE.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            return "0.0.0"
+        return value or "0.0.0"
 
     def get(self) -> dict[str, object]:
         return dict(self.data)
