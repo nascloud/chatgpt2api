@@ -20,7 +20,8 @@ def extract_bearer_token(authorization: str | None) -> str:
 
 
 def require_auth_key(authorization: str | None) -> None:
-    if extract_bearer_token(authorization) != str(config.auth_key or "").strip():
+    auth_key = str(config.auth_key or "").strip()
+    if not auth_key or extract_bearer_token(authorization) != auth_key:
         raise HTTPException(status_code=401, detail={"error": "authorization is invalid"})
 
 
@@ -80,17 +81,17 @@ def resolve_web_asset(requested_path: str) -> Path | None:
     if not WEB_DIST_DIR.exists():
         return None
     clean_path = requested_path.strip("/")
-    candidates = [WEB_DIST_DIR / "index.html"] if not clean_path else [
-        WEB_DIST_DIR / Path(clean_path),
-        WEB_DIST_DIR / clean_path / "index.html",
-        WEB_DIST_DIR / f"{clean_path}.html",
+    base_dir = WEB_DIST_DIR.resolve()
+    candidates = [base_dir / "index.html"] if not clean_path else [
+        base_dir / Path(clean_path),
+        base_dir / clean_path / "index.html",
+        base_dir / f"{clean_path}.html",
     ]
     for candidate in candidates:
         try:
-            candidate.relative_to(WEB_DIST_DIR)
+            candidate.resolve().relative_to(base_dir)
         except ValueError:
             continue
         if candidate.is_file():
             return candidate
     return None
-

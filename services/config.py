@@ -18,6 +18,14 @@ class LoadedSettings:
     refresh_account_interval_minute: int
 
 
+def _normalize_auth_key(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _is_invalid_auth_key(value: object) -> bool:
+    return _normalize_auth_key(value) == ""
+
+
 def _read_json_object(path: Path, *, name: str) -> dict[str, object]:
     if not path.exists():
         return {}
@@ -37,8 +45,8 @@ def _read_json_object(path: Path, *, name: str) -> dict[str, object]:
 def _load_settings() -> LoadedSettings:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     raw_config = _read_json_object(CONFIG_FILE, name="config.json")
-    auth_key = str(os.getenv("CHATGPT2API_AUTH_KEY") or raw_config.get("auth-key") or "").strip()
-    if not auth_key:
+    auth_key = _normalize_auth_key(os.getenv("CHATGPT2API_AUTH_KEY") or raw_config.get("auth-key"))
+    if _is_invalid_auth_key(auth_key):
         raise ValueError(
             "❌ auth-key 未设置！\n"
             "请在环境变量 CHATGPT2API_AUTH_KEY 中设置，或者在 config.json 中填写 auth-key。"
@@ -60,7 +68,7 @@ class ConfigStore:
         self.path = path
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.data = self._load()
-        if not self.auth_key:
+        if _is_invalid_auth_key(self.auth_key):
             raise ValueError(
                 "❌ auth-key 未设置！\n"
                 "请按以下任意一种方式解决：\n"
@@ -78,7 +86,7 @@ class ConfigStore:
 
     @property
     def auth_key(self) -> str:
-        return str(os.getenv("CHATGPT2API_AUTH_KEY") or self.data.get("auth-key") or "").strip()
+        return _normalize_auth_key(os.getenv("CHATGPT2API_AUTH_KEY") or self.data.get("auth-key"))
 
     @property
     def accounts_file(self) -> Path:
@@ -120,7 +128,11 @@ class ConfigStore:
         return str(self.data.get("proxy") or "").strip()
 
     def update(self, data: dict[str, object]) -> dict[str, object]:
-        self.data = dict(data or {})
+        next_data = dict(self.data)
+        next_data.update(dict(data or {}))
+        if _is_invalid_auth_key(next_data.get("auth-key")):
+            next_data["auth-key"] = self.data.get("auth-key") or os.getenv("CHATGPT2API_AUTH_KEY") or ""
+        self.data = next_data
         self._save()
         return self.get()
 
