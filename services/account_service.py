@@ -86,13 +86,13 @@ class AccountService:
         if isinstance(value, dict):
             for key, item in value.items():
                 key_text = self._clean_token(key).lower()
-                matched = self._normalize_account_type(item)
-                if matched and any(flag in key_text for flag in ("plan", "type", "subscription", "workspace", "tier")):
-                    return matched
-            for item in value.values():
-                matched = self._search_account_type(item)
-                if matched:
-                    return matched
+                if any(flag in key_text for flag in ("plan", "type", "subscription", "workspace", "tier")):
+                    matched = self._normalize_account_type(item)
+                    if matched:
+                        return matched
+                    matched = self._search_account_type(item)
+                    if matched:
+                        return matched
             return None
         if isinstance(value, list):
             for item in value:
@@ -100,7 +100,7 @@ class AccountService:
                 if matched:
                     return matched
             return None
-        return self._normalize_account_type(value)
+        return None
 
     def _detect_account_type(self, access_token: str, me_payload: Any, init_payload: Any) -> str:
         token_payload = self._decode_access_token_payload(access_token)

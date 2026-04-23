@@ -82,6 +82,10 @@ class ChatGPTService:
     def _new_backend(access_token: str = "") -> OpenAIBackendAPI:
         return OpenAIBackendAPI(access_token=access_token)
 
+    def _get_text_access_token(self) -> str:
+        tokens = self.account_service.list_tokens()
+        return tokens[0] if tokens else ""
+
     @staticmethod
     def _encode_images(images: Iterable[tuple[bytes, str, str]]) -> list[str]:
         encoded_images: list[str] = []
@@ -91,7 +95,7 @@ class ChatGPTService:
         return encoded_images
 
     def list_models(self) -> dict[str, object]:
-        result = self._new_backend().list_models()
+        result = self._new_backend(self._get_text_access_token()).list_models()
         data = result.get("data")
         if not isinstance(data, list):
             return result
@@ -177,7 +181,7 @@ class ChatGPTService:
         if len(messages) == 1 and messages[0].get("role") == "system":
             raise HTTPException(status_code=400, detail={"error": "input text is required"})
         try:
-            result = self._new_backend().chat_completions(messages=messages, model=model, stream=False)
+            result = self._new_backend(self._get_text_access_token()).chat_completions(messages=messages, model=model, stream=False)
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
@@ -230,7 +234,7 @@ class ChatGPTService:
         }
 
         try:
-            stream = self._new_backend().chat_completions(messages=messages, model=model, stream=True)
+            stream = self._new_backend(self._get_text_access_token()).chat_completions(messages=messages, model=model, stream=True)
             for chunk in stream:
                 choices = chunk.get("choices")
                 first_choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
@@ -1035,7 +1039,7 @@ class ChatGPTService:
         model = str(body.get("model") or "auto").strip() or "auto"
         messages = self._chat_messages_from_body(body)
         try:
-            return self._new_backend().chat_completions(messages=messages, model=model, stream=False)
+            return self._new_backend(self._get_text_access_token()).chat_completions(messages=messages, model=model, stream=False)
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
@@ -1052,7 +1056,7 @@ class ChatGPTService:
         model = str(body.get("model") or "auto").strip() or "auto"
         messages = self._chat_messages_from_body(body)
         try:
-            yield from self._new_backend().chat_completions(messages=messages, model=model, stream=True)
+            yield from self._new_backend(self._get_text_access_token()).chat_completions(messages=messages, model=model, stream=True)
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 

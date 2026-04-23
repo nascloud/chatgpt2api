@@ -865,6 +865,14 @@ class OpenAIBackendAPI:
                 return text
         return ""
 
+    @staticmethod
+    def _strip_history_prefix(text: str, history_text: str) -> str:
+        history_text = str(history_text or "")
+        text = str(text or "")
+        if history_text and text.startswith(history_text):
+            return text[len(history_text):]
+        return text
+
     def _text_from_message(self, message: Dict[str, Any]) -> str:
         """从单条 message 结构中提取文本。"""
         content = message.get("content") or {}
@@ -1138,7 +1146,7 @@ class OpenAIBackendAPI:
                 if not isinstance(item, dict):
                     raise RuntimeError("only string or text content blocks are supported")
                 block_type = item.get("type")
-                if block_type in {"text", "input_text"}:
+                if block_type in {"text", "input_text", "output_text"}:
                     parts.append(str(item.get("text", "")))
                     continue
                 raise RuntimeError(f"unsupported content block type: {block_type}")
@@ -1162,15 +1170,16 @@ class OpenAIBackendAPI:
             })
         return normalized
 
-    def _last_assistant_message_text(self, messages: list[Dict[str, Any]]) -> str:
-        """获取输入历史里最后一条 assistant 文本。"""
-        for message in reversed(messages):
+    def _assistant_history_text(self, messages: list[Dict[str, Any]]) -> str:
+        """获取输入历史里所有 assistant 文本拼接结果。"""
+        parts = []
+        for message in messages:
             if message.get("role") != "assistant":
                 continue
             content = message.get("content", "")
-            if isinstance(content, str):
-                return content
-        return ""
+            if isinstance(content, str) and content:
+                parts.append(content)
+        return "".join(parts)
 
     def _last_event(self, events: list[Dict[str, Any]]) -> Dict[str, Any]:
         """返回最后一个非终止事件，方便排查问题。"""
@@ -1258,12 +1267,13 @@ class OpenAIBackendAPI:
         requirements = self._get_chat_requirements(authenticated=bool(self.access_token))
         path, timezone = self._chat_target()
         events = list(self._stream_events(path, requirements, self._conversation_payload(messages, model, timezone)))
+        history_assistant_text = self._assistant_history_text(messages)
         return {
             "requirements": requirements,
             "prepare": {},
             "events": events,
             "last_event": self._last_event(events),
-            "text": self._extract_text_from_events(events),
+            "text": self._strip_history_prefix(self._extract_text_from_events(events), history_assistant_text),
         }
 
     def list_models(self) -> Dict[str, Any]:
@@ -1315,8 +1325,8 @@ class OpenAIBackendAPI:
         """返回 OpenAI `/v1/chat/completions` 风格的流式 chunk。"""
         completion_id = f"chatcmpl-{new_uuid()}"
         created = int(time.time())
-        current_text = ""
-        history_assistant_text = self._last_assistant_message_text(messages)
+        history_assistant_text = self._assistant_history_text(messages)
+        current_text = history_assistant_text
         sent_role = False
         self._bootstrap()
         requirements = self._get_chat_requirements(authenticated=bool(self.access_token))
@@ -1327,8 +1337,6 @@ class OpenAIBackendAPI:
             if event.get("done"):
                 break
             next_text = self._next_assistant_text(event, current_text)
-            if not sent_role and history_assistant_text and next_text == history_assistant_text:
-                continue
             if next_text == current_text:
                 continue
             delta = next_text[len(current_text):] if next_text.startswith(current_text) else next_text
