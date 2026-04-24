@@ -641,7 +641,16 @@ class OpenAIBackendAPI:
     def _resolve_image_urls(self, conversation_id: str, file_ids: list[str], sediment_ids: list[str]) -> list[str]:
         """把图片结果 id 解析成可下载 URL。"""
         urls = []
+        skip_patterns = {"file_upload"}
         for file_id in file_ids:
+            if file_id in skip_patterns:
+                logger.debug({
+                    "event": "image_file_id_skipped",
+                    "source": "file",
+                    "conversation_id": conversation_id,
+                    "id": file_id,
+                })
+                continue
             try:
                 url = self._get_file_download_url(file_id)
             except Exception as exc:
@@ -749,6 +758,8 @@ class OpenAIBackendAPI:
         conversation_id = sse_result["conversation_id"]
         file_ids = list(sse_result["file_ids"])
         sediment_ids = list(sse_result["sediment_ids"])
+        invalid_file_id_patterns = {"file_upload"}
+        file_ids = [fid for fid in file_ids if fid not in invalid_file_id_patterns]
         if conversation_id and not file_ids and not sediment_ids:
             polled_file_ids, polled_sediment_ids = self._poll_image_results(conversation_id)
             file_ids.extend([item for item in polled_file_ids if item not in file_ids])
@@ -1020,6 +1031,8 @@ class OpenAIBackendAPI:
         finally:
             sse.close()
 
+        invalid_file_id_patterns = {"file_upload"}
+        file_ids = [fid for fid in file_ids if fid not in invalid_file_id_patterns]
         if conversation_id and not file_ids and not sediment_ids:
             polled_file_ids, polled_sediment_ids = self._poll_image_results(conversation_id)
             self._append_unique(file_ids, polled_file_ids)
