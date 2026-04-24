@@ -297,12 +297,14 @@ class OpenAIBackendAPI:
         """把标准图片 prompt 和宽高比转成底层图片生成 prompt。"""
         if not size:
             return prompt
-        if size not in {"1:1", "16:9", "9:16"}:
+        if size not in {"1:1", "16:9", "9:16", "4:3", "3:4"}:
             return f"{prompt.strip()}\n\n输出图片，宽高比为 {size}。"
         hint = {
             "1:1": "输出为 1:1 正方形构图，主体居中，适合正方形画幅。",
             "16:9": "输出为 16:9 横屏构图，适合宽画幅展示。",
             "9:16": "输出为 9:16 竖屏构图，适合竖版画幅展示。",
+            "4:3": "输出为 4:3 比例，兼顾宽度与高度，适合展示画面细节。",
+            "3:4": "输出为 3:4 比例，纵向构图，适合人物肖像或竖向场景。",
         }[size]
         return f"{prompt.strip()}\n\n{hint}"
 
@@ -932,6 +934,7 @@ class OpenAIBackendAPI:
         self,
         prompt: str,
         model: str = "gpt-image-2",
+        size: str = "1:1",
         images: Optional[list[str]] = None,
     ) -> Iterator[Dict[str, Any]]:
         if not self.access_token:
@@ -948,7 +951,7 @@ class OpenAIBackendAPI:
         references = [self._upload_image(image, f"image_{idx}.png") for idx, image in enumerate(images or [], start=1)]
         self._bootstrap()
         requirements = self._get_auth_chat_requirements()
-        final_prompt = self._build_image_prompt(prompt, "1:1")
+        final_prompt = self._build_image_prompt(prompt, size)
         conduit_token = self._prepare_image_conversation(final_prompt, requirements, model)
         sse = self._start_image_generation(final_prompt, requirements, conduit_token, model, references)
         try:
