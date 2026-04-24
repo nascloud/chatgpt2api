@@ -42,7 +42,7 @@ export function UserKeysCard() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [revealedKey, setRevealedKey] = useState("");
 
   const load = async () => {
@@ -81,8 +81,20 @@ export function UserKeysCard() {
     }
   };
 
+  const setItemPending = (id: string, isPending: boolean) => {
+    setPendingIds((current) => {
+      const next = new Set(current);
+      if (isPending) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+
   const handleToggle = async (item: UserKey) => {
-    setPendingId(item.id);
+    setItemPending(item.id, true);
     try {
       const data = await updateUserKey(item.id, { enabled: !item.enabled });
       setItems(data.items);
@@ -90,7 +102,7 @@ export function UserKeysCard() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "更新用户密钥失败");
     } finally {
-      setPendingId(null);
+      setItemPending(item.id, false);
     }
   };
 
@@ -98,7 +110,7 @@ export function UserKeysCard() {
     if (!window.confirm(`确认删除用户密钥「${item.name}」吗？`)) {
       return;
     }
-    setPendingId(item.id);
+    setItemPending(item.id, true);
     try {
       const data = await deleteUserKey(item.id);
       setItems(data.items);
@@ -106,7 +118,7 @@ export function UserKeysCard() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "删除用户密钥失败");
     } finally {
-      setPendingId(null);
+      setItemPending(item.id, false);
     }
   };
 
@@ -168,7 +180,7 @@ export function UserKeysCard() {
           ) : (
             <div className="space-y-3">
               {items.map((item) => {
-                const isPending = pendingId === item.id;
+                const isPending = pendingIds.has(item.id);
                 return (
                   <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-stone-200 bg-white px-4 py-4 md:flex-row md:items-center md:justify-between">
                     <div className="min-w-0 space-y-2">

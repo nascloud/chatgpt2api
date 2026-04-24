@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import secrets
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +33,7 @@ class AuthService:
         self.store_file = store_file
         self._lock = Lock()
         self._items = self._load()
+        self._last_used_flush_at: dict[str, datetime] = {}
 
     @staticmethod
     def _clean(value: object) -> str:
@@ -77,7 +80,23 @@ class AuthService:
     def _save(self) -> None:
         self.store_file.parent.mkdir(parents=True, exist_ok=True)
         payload = {"items": self._items}
-        self.store_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        data = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{self.store_file.name}.",
+            suffix=".tmp",
+            dir=self.store_file.parent,
+            text=True,
+        )
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as file:
+                file.write(data)
+                file.flush()
+                os.fsync(file.fileno())
+            tmp_path.replace(self.store_file)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
     @staticmethod
     def _public_item(item: dict[str, object]) -> dict[str, object]:
@@ -167,9 +186,17 @@ class AuthService:
                 if not stored_hash or not hmac.compare_digest(stored_hash, candidate_hash):
                     continue
                 next_item = dict(item)
-                next_item["last_used_at"] = _now_iso()
+                now = datetime.now(timezone.utc)
+                next_item["last_used_at"] = now.isoformat()
                 self._items[index] = next_item
-                self._save()
+                item_id = self._clean(next_item.get("id"))
+                last_flush_at = self._last_used_flush_at.get(item_id)
+                if last_flush_at is None or (now - last_flush_at).total_seconds() >= 60:
+                    self._last_used_flush_at[item_id] = now
+                    try:
+                        self._save()
+                    except Exception:
+                        pass
                 return self._public_item(next_item)
         return None
 

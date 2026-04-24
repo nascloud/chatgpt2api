@@ -102,6 +102,22 @@ class AuthServiceTests(unittest.TestCase):
             self.assertFalse(service.delete_key(item["id"], role="user"))
             self.assertEqual(service.list_keys(role="user"), [])
 
+    def test_authenticate_ignores_last_used_save_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            service = AuthService(Path(tmp_dir) / "auth_keys.json")
+            item, raw_key = service.create_key(role="user", name="Alice")
+
+            def fail_save() -> None:
+                raise OSError("disk unavailable")
+
+            service._save = fail_save
+
+            authed = service.authenticate(raw_key)
+
+            self.assertIsNotNone(authed)
+            self.assertEqual(authed["id"], item["id"])
+            self.assertIsNotNone(authed["last_used_at"])
+
 
 if __name__ == "__main__":
     unittest.main()
