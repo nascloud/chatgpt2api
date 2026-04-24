@@ -9,6 +9,7 @@ os.environ.setdefault("CHATGPT2API_AUTH_KEY", "test-auth")
 
 from services.account_service import AccountService
 from services.auth_service import AuthService
+from services.storage.json_storage import JSONStorageBackend
 from utils.helper import anonymize_token
 
 
@@ -27,13 +28,13 @@ class AccountCapabilityTests(unittest.TestCase):
 
     def test_prolite_variants_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            service = AccountService(Path(tmp_dir) / "accounts.json")
+            service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
             self.assertEqual(service._normalize_account_type("prolite"), "ProLite")
             self.assertEqual(service._normalize_account_type("pro_lite"), "ProLite")
 
     def test_search_account_type_ignores_unrelated_scalar_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            service = AccountService(Path(tmp_dir) / "accounts.json")
+            service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
             self.assertIsNone(
                 service._search_account_type(
                     {
@@ -47,7 +48,7 @@ class AccountCapabilityTests(unittest.TestCase):
 
     def test_mark_image_result_does_not_consume_unknown_quota(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            service = AccountService(Path(tmp_dir) / "accounts.json")
+            service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
             service.add_accounts(["token-1"])
             service.update_account(
                 "token-1",
