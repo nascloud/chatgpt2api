@@ -183,7 +183,6 @@ def extract_chat_image(body: dict[str, object]) -> list[tuple[bytes, str]]:
     messages = body.get("messages")
     if not isinstance(messages, list):
         return []
-    all_images = []
     for message in reversed(messages):
         if not isinstance(message, dict):
             continue
@@ -191,8 +190,8 @@ def extract_chat_image(body: dict[str, object]) -> list[tuple[bytes, str]]:
             continue
         images = extract_image_from_message_content(message.get("content"))
         if images:
-            all_images.extend(images)
-    return all_images
+            return images
+    return []
 
 
 def extract_chat_prompt(body: dict[str, object]) -> str:
