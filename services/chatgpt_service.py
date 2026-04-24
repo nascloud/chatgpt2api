@@ -513,7 +513,7 @@ class ChatGPTService:
             index: int,
             total: int,
             request_token: str,
-            size: str = "1:1",
+            size: str | None = None,
             response_format: str = "b64_json",
             base_url: str | None = None,
             images: list[str] | None = None,
@@ -568,7 +568,7 @@ class ChatGPTService:
             prompt: str,
             model: str,
             n: int,
-            size: str = "1:1",
+            size: str | None = None,
             response_format: str = "b64_json",
             base_url: str | None = None,
     ) -> Iterator[dict[str, object]]:
@@ -643,7 +643,7 @@ class ChatGPTService:
         if not emitted:
             raise ImageGenerationError(last_error or "image generation failed")
 
-    def generate_with_pool(self, prompt: str, model: str, n: int, size: str = "1:1", response_format: str = "b64_json",
+    def generate_with_pool(self, prompt: str, model: str, n: int, size: str | None = None, response_format: str = "b64_json",
                            base_url: str = None):
         created = None
         image_items: list[dict[str, object]] = []
@@ -663,7 +663,7 @@ class ChatGPTService:
             prompt: str,
             model: str,
             n: int,
-            size: str = "1:1",
+            size: str | None = None,
             response_format: str = "b64_json",
             base_url: str | None = None,
     ) -> Iterator[dict[str, object]]:
@@ -749,6 +749,7 @@ class ChatGPTService:
             images: Iterable[tuple[bytes, str, str]],
             model: str,
             n: int,
+            size: str | None = None,
             response_format: str = "b64_json",
             base_url: str = None,
     ):
@@ -786,6 +787,7 @@ class ChatGPTService:
                         image=self._encode_images(normalized_images),
                         prompt=prompt,
                         model=model,
+                        size=size,
                         response_format="b64_json",
                     ), prompt, response_format, base_url)
                     account = self.account_service.mark_image_result(request_token, success=True)
@@ -835,6 +837,7 @@ class ChatGPTService:
             images: Iterable[tuple[bytes, str, str]],
             model: str,
             n: int,
+            size: str | None = None,
             response_format: str = "b64_json",
             base_url: str | None = None,
     ) -> Iterator[dict[str, object]]:
@@ -873,14 +876,15 @@ class ChatGPTService:
                 has_result = False
                 try:
                     for chunk in self._stream_single_image_result(
-                            prompt,
-                            model,
-                            index,
-                            n,
-                            request_token,
-                            response_format,
-                            base_url,
-                            encoded_images,
+                            prompt=prompt,
+                            model=model,
+                            index=index,
+                            total=n,
+                            request_token=request_token,
+                            size=size,
+                            response_format=response_format,
+                            base_url=base_url,
+                            images=encoded_images,
                     ):
                         emitted = True
                         emitted_for_request = True

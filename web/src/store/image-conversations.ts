@@ -124,7 +124,7 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
     mode: turn.mode === "edit" ? "edit" : "generate",
     referenceImages: getLegacyReferenceImages(turn),
     count: Math.max(1, Number(turn.count || normalizedImages.length || 1)),
-    size: String(turn.size || "1:1"),
+    size: typeof turn.size === "string" ? turn.size : "",
     images: normalizedImages,
     createdAt: String(turn.createdAt || new Date().toISOString()),
     status:
@@ -149,7 +149,7 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
           mode: conversation.mode === "edit" ? "edit" : "generate",
           referenceImages: getLegacyReferenceImages(conversation),
           count: Number(conversation.count || 1),
-          size: String(conversation.size || "1:1"),
+          size: typeof conversation.size === "string" ? conversation.size : "",
           images: Array.isArray(conversation.images) ? (conversation.images as StoredImage[]) : [],
           createdAt: String(conversation.createdAt || new Date().toISOString()),
           status:

@@ -15,7 +15,7 @@ class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
     model: str = "gpt-image-2"
     n: int = Field(default=1, ge=1, le=4)
-    size: str = "1:1"
+    size: str | None = None
     response_format: str = "b64_json"
     history_disabled: bool = True
     stream: bool | None = None
@@ -88,6 +88,7 @@ def create_router(chatgpt_service: ChatGPTService) -> APIRouter:
             prompt: str = Form(...),
             model: str = Form(default="gpt-image-2"),
             n: int = Form(default=1),
+            size: str | None = Form(default=None),
             response_format: str = Form(default="b64_json"),
             stream: bool | None = Form(default=None),
     ):
@@ -108,12 +109,12 @@ def create_router(chatgpt_service: ChatGPTService) -> APIRouter:
             if not account_service.has_available_account():
                 raise_image_quota_error(RuntimeError("no available image quota"))
             return StreamingResponse(
-                sse_json_stream(chatgpt_service.stream_image_edit(prompt, images, model, n, response_format, base_url)),
+                sse_json_stream(chatgpt_service.stream_image_edit(prompt, images, model, n, size, response_format, base_url)),
                 media_type="text/event-stream",
             )
         try:
             return await run_in_threadpool(
-                chatgpt_service.edit_with_pool, prompt, images, model, n, response_format, base_url
+                chatgpt_service.edit_with_pool, prompt, images, model, n, size, response_format, base_url
             )
         except ImageGenerationError as exc:
             raise_image_quota_error(exc)

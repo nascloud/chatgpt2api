@@ -111,7 +111,7 @@ export async function updateAccount(
   });
 }
 
-export async function generateImage(prompt: string, model?: ImageModel, size: string = "1:1") {
+export async function generateImage(prompt: string, model?: ImageModel, size?: string) {
   return httpRequest<{ created: number; data: Array<{ b64_json: string; revised_prompt?: string }> }>(
     "/v1/images/generations",
     {
@@ -119,7 +119,7 @@ export async function generateImage(prompt: string, model?: ImageModel, size: st
       body: {
         prompt,
         ...(model ? { model } : {}),
-        size,
+        ...(size ? { size } : {}),
         n: 1,
         response_format: "b64_json",
       },
@@ -127,7 +127,7 @@ export async function generateImage(prompt: string, model?: ImageModel, size: st
   );
 }
 
-export async function editImage(files: File | File[], prompt: string, model?: ImageModel, size: string = "1:1") {
+export async function editImage(files: File | File[], prompt: string, model?: ImageModel, size?: string) {
   const formData = new FormData();
   const uploadFiles = Array.isArray(files) ? files : [files];
 
@@ -138,7 +138,9 @@ export async function editImage(files: File | File[], prompt: string, model?: Im
   if (model) {
     formData.append("model", model);
   }
-  formData.append("size", size);
+  if (size) {
+    formData.append("size", size);
+  }
   formData.append("n", "1");
 
   return httpRequest<{ created: number; data: Array<{ b64_json: string; revised_prompt?: string }> }>(

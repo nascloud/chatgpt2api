@@ -1,6 +1,6 @@
 "use client";
-import { ArrowUp, ImagePlus, LoaderCircle, X } from "lucide-react";
-import { useMemo, useState, type ClipboardEvent, type RefObject } from "react";
+import { ArrowUp, Check, ChevronDown, ImagePlus, LoaderCircle, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type RefObject } from "react";
 
 import { ImageLightbox } from "@/components/image-lightbox";
 import { Button } from "@/components/ui/button";
@@ -8,13 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ImageConversationMode } from "@/store/image-conversations";
 import { cn } from "@/lib/utils";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 type ImageComposerProps = {
   mode: ImageConversationMode;
@@ -57,10 +50,36 @@ export function ImageComposer({
 }: ImageComposerProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [isSizeMenuOpen, setIsSizeMenuOpen] = useState(false);
+  const sizeMenuRef = useRef<HTMLDivElement>(null);
   const lightboxImages = useMemo(
     () => referenceImages.map((image, index) => ({ id: `${image.name}-${index}`, src: image.dataUrl })),
     [referenceImages],
   );
+  const imageSizeOptions = [
+    { value: "", label: "未指定" },
+    { value: "1:1", label: "1:1 (正方形)" },
+    { value: "16:9", label: "16:9 (横版)" },
+    { value: "4:3", label: "4:3 (横版)" },
+    { value: "3:4", label: "3:4 (竖版)" },
+    { value: "9:16", label: "9:16 (竖版)" },
+  ];
+  const imageSizeLabel = imageSizeOptions.find((option) => option.value === imageSize)?.label || "未指定";
+
+  useEffect(() => {
+    if (!isSizeMenuOpen) {
+      return;
+    }
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!sizeMenuRef.current?.contains(event.target as Node)) {
+        setIsSizeMenuOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [isSizeMenuOpen]);
 
   const handleTextareaPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const imageFiles = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
@@ -123,7 +142,7 @@ export function ImageComposer({
           </div>
         ) : null}
 
-        <div className="overflow-hidden rounded-[32px] border border-stone-200 bg-white">
+        <div className="rounded-[32px] border border-stone-200 bg-white">
           <div
             className="relative cursor-text"
             onClick={() => {
@@ -190,25 +209,43 @@ export function ImageComposer({
                       className="h-7 w-[40px] border-0 bg-transparent px-0 text-center text-xs font-medium text-stone-700 shadow-none focus-visible:ring-0 sm:h-8 sm:w-[64px] sm:text-sm"
                     />
                   </div>
-                  <div className="flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-2 py-0.5 text-[11px] sm:gap-2 sm:px-3 sm:py-1 sm:text-[13px]">
+                  <div
+                    ref={sizeMenuRef}
+                    className="relative flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-2 py-0.5 text-[11px] sm:gap-2 sm:px-3 sm:py-1 sm:text-[13px]"
+                  >
                     <span className="font-medium text-stone-700 sm:text-sm">比例</span>
-                    <Select value={imageSize} onValueChange={onImageSizeChange}>
-                      <SelectTrigger className="h-7 border-0 bg-transparent px-0 text-xs font-bold text-stone-700 shadow-none focus-visible:ring-0 w-auto gap-0 sm:h-8 sm:gap-1">
-                        <div className="flex items-center">
-                          <span>{imageSize}</span>
-                          <span className="hidden sm:inline ml-1 font-medium">
-                            ({imageSize === "1:1" ? "正方形" : imageSize.includes("16:9") || imageSize.includes("4:3") ? "横版" : "竖版"})
-                          </span>
-                        </div>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1:1">1:1 (正方形)</SelectItem>
-                        <SelectItem value="16:9">16:9 (横版)</SelectItem>
-                        <SelectItem value="4:3">4:3 (横版)</SelectItem>
-                        <SelectItem value="3:4">3:4 (竖版)</SelectItem>
-                        <SelectItem value="9:16">9:16 (竖版)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <button
+                      type="button"
+                      className="flex h-7 w-[110px] items-center justify-between bg-transparent text-left text-xs font-bold text-stone-700 sm:h-8 sm:w-[132px]"
+                      onClick={() => setIsSizeMenuOpen((open) => !open)}
+                    >
+                      <span className="truncate">{imageSizeLabel}</span>
+                      <ChevronDown className={cn("size-4 shrink-0 opacity-60 transition", isSizeMenuOpen && "rotate-180")} />
+                    </button>
+                    {isSizeMenuOpen ? (
+                      <div className="absolute bottom-[calc(100%+10px)] left-0 z-50 w-[170px] overflow-hidden rounded-3xl border border-white/80 bg-white p-2 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.35)] sm:w-[186px]">
+                        {imageSizeOptions.map((option) => {
+                          const active = option.value === imageSize;
+                          return (
+                            <button
+                              key={option.label}
+                              type="button"
+                              className={cn(
+                                "flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-sm text-stone-700 transition hover:bg-stone-100",
+                                active && "bg-stone-100 font-medium text-stone-950",
+                              )}
+                              onClick={() => {
+                                onImageSizeChange(option.value);
+                                setIsSizeMenuOpen(false);
+                              }}
+                            >
+                              <span>{option.label}</span>
+                              {active ? <Check className="size-4" /> : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="flex items-center gap-1.5 sm:gap-2">

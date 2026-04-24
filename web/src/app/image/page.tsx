@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { History, Plus } from "lucide-react";
+import { History, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ImageComposer } from "@/app/image/components/image-composer";
@@ -180,7 +180,7 @@ export default function ImagePage() {
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageCount, setImageCount] = useState("1");
   const [imageMode, setImageMode] = useState<ImageConversationMode>("generate");
-  const [imageSize, setImageSize] = useState("1:1");
+  const [imageSize, setImageSize] = useState("");
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [referenceImageFiles, setReferenceImageFiles] = useState<File[]>([]);
   const [referenceImages, setReferenceImages] = useState<StoredReferenceImage[]>([]);
@@ -216,9 +216,7 @@ export default function ImagePage() {
     const loadHistory = async () => {
       try {
         const storedSize = typeof window !== "undefined" ? window.localStorage.getItem(IMAGE_SIZE_STORAGE_KEY) : null;
-        if (storedSize) {
-          setImageSize(storedSize);
-        }
+        setImageSize(storedSize || "");
 
         const items = await listImageConversations();
         const normalizedItems = await recoverConversationHistory(items);
@@ -307,7 +305,9 @@ export default function ImagePage() {
 
     if (imageSize) {
       window.localStorage.setItem(IMAGE_SIZE_STORAGE_KEY, imageSize);
+      return;
     }
+    window.localStorage.removeItem(IMAGE_SIZE_STORAGE_KEY);
   }, [imageSize]);
 
   useEffect(() => {
@@ -818,6 +818,14 @@ export default function ImagePage() {
             >
               <Plus className="size-4" />
               新建
+            </Button>
+            <Button
+              variant="outline"
+              className="h-10 rounded-2xl border-stone-200 bg-white/85 px-3 text-stone-600 shadow-sm"
+              onClick={() => void handleClearHistory()}
+              disabled={conversations.length === 0}
+            >
+              <Trash2 className="size-4" />
             </Button>
           </div>
 

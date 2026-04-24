@@ -28,7 +28,7 @@ export function TopNav() {
   }
 
   return (
-    <header className="border-b border-stone-100/50 bg-white/80 backdrop-blur-md">
+    <header className="border-b border-stone-100/50">
       <div className="flex h-12 items-center justify-between px-3 sm:px-6">
         <div className="flex items-center gap-2 sm:gap-3">
           <Link

@@ -293,7 +293,7 @@ class OpenAIBackendAPI:
         data.sort(key=lambda item: item["id"])
         return {"object": "list", "data": data}
 
-    def _build_image_prompt(self, prompt: str, size: str) -> str:
+    def _build_image_prompt(self, prompt: str, size: str | None) -> str:
         """把标准图片 prompt 和宽高比转成底层图片生成 prompt。"""
         if not size:
             return prompt
@@ -726,7 +726,7 @@ class OpenAIBackendAPI:
                 data.append({"url": self._save_image_bytes(response.content)})
         return {"created": int(time.time()), "data": data}
 
-    def _run_image_task(self, prompt: str, model: str, size: str, images: Optional[list[str]] = None,
+    def _run_image_task(self, prompt: str, model: str, size: str | None, images: Optional[list[str]] = None,
                         response_format: str = "url") -> Dict[str, Any]:
         """执行图片生成或图片编辑主流程。"""
         if not self.access_token:
@@ -934,7 +934,7 @@ class OpenAIBackendAPI:
         self,
         prompt: str,
         model: str = "gpt-image-2",
-        size: str = "1:1",
+        size: str | None = None,
         images: Optional[list[str]] = None,
     ) -> Iterator[Dict[str, Any]]:
         if not self.access_token:
@@ -1297,14 +1297,14 @@ class OpenAIBackendAPI:
         """返回当前模式下可用模型，格式对齐 OpenAI `/v1/models`。"""
         return self._normalize_models(self._get_models_raw(authenticated=bool(self.access_token)))
 
-    def images_generations(self, prompt: str, model: str = "gpt-image-2", size: str = "1:1",
+    def images_generations(self, prompt: str, model: str = "gpt-image-2", size: str | None = None,
                            response_format: str = "url") -> Dict[str, Any]:
         """返回 OpenAI `/v1/images/generations` 风格结果。"""
         if self._is_codex_image_model(model):
             return self._run_codex_image_task(prompt, response_format=response_format)
         return self._run_image_task(prompt, model, size, response_format=response_format)
 
-    def images_edits(self, image: str | list[str], prompt: str, model: str = "gpt-image-2", size: str = "1:1",
+    def images_edits(self, image: str | list[str], prompt: str, model: str = "gpt-image-2", size: str | None = None,
                      response_format: str = "url") -> Dict[str, Any]:
         """返回 OpenAI `/v1/images/edits` 风格结果。"""
         images = [image] if isinstance(image, str) else image
