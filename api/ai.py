@@ -15,6 +15,7 @@ class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
     model: str = "gpt-image-2"
     n: int = Field(default=1, ge=1, le=4)
+    size: str = "1:1"
     response_format: str = "b64_json"
     history_disabled: bool = True
     stream: bool | None = None
@@ -66,14 +67,14 @@ def create_router(chatgpt_service: ChatGPTService) -> APIRouter:
             return StreamingResponse(
                 sse_json_stream(
                     chatgpt_service.stream_image_generation(
-                        body.prompt, body.model, body.n, body.response_format, base_url
+                        body.prompt, body.model, body.n, body.size, body.response_format, base_url
                     )
                 ),
                 media_type="text/event-stream",
             )
         try:
             return await run_in_threadpool(
-                chatgpt_service.generate_with_pool, body.prompt, body.model, body.n, body.response_format, base_url
+                chatgpt_service.generate_with_pool, body.prompt, body.model, body.n, body.size, body.response_format, base_url
             )
         except ImageGenerationError as exc:
             raise_image_quota_error(exc)
