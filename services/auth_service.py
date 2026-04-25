@@ -2,20 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
-import os
 import secrets
-import tempfile
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from threading import Lock
 from typing import Literal
 
-
-BASE_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = BASE_DIR / "data"
-AUTH_KEYS_FILE = DATA_DIR / "auth_keys.json"
+from services.config import config
+from services.storage.base import StorageBackend
 
 AuthRole = Literal["admin", "user"]
 
@@ -29,8 +23,8 @@ def _hash_key(value: str) -> str:
 
 
 class AuthService:
-    def __init__(self, store_file: Path):
-        self.store_file = store_file
+    def __init__(self, storage: StorageBackend):
+        self.storage = storage
         self._lock = Lock()
         self._items = self._load()
         self._last_used_flush_at: dict[str, datetime] = {}
@@ -63,40 +57,16 @@ class AuthService:
         }
 
     def _load(self) -> list[dict[str, object]]:
-        if not self.store_file.exists():
-            return []
         try:
-            raw = json.loads(self.store_file.read_text(encoding="utf-8"))
+            items = self.storage.load_auth_keys()
         except Exception:
             return []
-        if isinstance(raw, dict):
-            items = raw.get("items")
-        else:
-            items = raw
         if not isinstance(items, list):
             return []
         return [normalized for item in items if (normalized := self._normalize_item(item)) is not None]
 
     def _save(self) -> None:
-        self.store_file.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"items": self._items}
-        data = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
-        fd, tmp_name = tempfile.mkstemp(
-            prefix=f".{self.store_file.name}.",
-            suffix=".tmp",
-            dir=self.store_file.parent,
-            text=True,
-        )
-        tmp_path = Path(tmp_name)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as file:
-                file.write(data)
-                file.flush()
-                os.fsync(file.fileno())
-            tmp_path.replace(self.store_file)
-        except Exception:
-            tmp_path.unlink(missing_ok=True)
-            raise
+        self.storage.save_auth_keys(self._items)
 
     @staticmethod
     def _public_item(item: dict[str, object]) -> dict[str, object]:
@@ -116,7 +86,7 @@ class AuthService:
 
     def create_key(self, *, role: AuthRole, name: str = "") -> tuple[dict[str, object], str]:
         normalized_name = self._clean(name) or ("管理员密钥" if role == "admin" else "普通用户")
-        raw_key = f"cg2a_{role}_{secrets.token_urlsafe(24)}"
+        raw_key = f"sk-{secrets.token_urlsafe(24)}"
         item = {
             "id": uuid.uuid4().hex[:12],
             "name": normalized_name,
@@ -192,13 +162,13 @@ class AuthService:
                 item_id = self._clean(next_item.get("id"))
                 last_flush_at = self._last_used_flush_at.get(item_id)
                 if last_flush_at is None or (now - last_flush_at).total_seconds() >= 60:
-                    self._last_used_flush_at[item_id] = now
                     try:
                         self._save()
+                        self._last_used_flush_at[item_id] = now
                     except Exception:
                         pass
                 return self._public_item(next_item)
         return None
 
 
-auth_service = AuthService(AUTH_KEYS_FILE)
+auth_service = AuthService(config.get_storage_backend())

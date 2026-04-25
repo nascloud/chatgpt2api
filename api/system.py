@@ -55,7 +55,7 @@ def create_router(app_version: str) -> APIRouter:
 
     @router.get("/api/storage/info")
     async def get_storage_info(authorization: str | None = Header(default=None)):
-        require_auth_key(authorization)
+        require_admin(authorization)
         storage = config.get_storage_backend()
         return {
             "backend": storage.get_backend_info(),

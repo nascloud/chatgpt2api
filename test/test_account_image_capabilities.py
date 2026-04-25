@@ -79,7 +79,7 @@ class TokenLogTests(unittest.TestCase):
 class AuthServiceTests(unittest.TestCase):
     def test_create_authenticate_disable_and_delete_user_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            service = AuthService(Path(tmp_dir) / "auth_keys.json")
+            service = AuthService(JSONStorageBackend(Path(tmp_dir) / "accounts.json", Path(tmp_dir) / "auth_keys.json"))
 
             item, raw_key = service.create_key(role="user", name="Alice")
 
@@ -105,7 +105,7 @@ class AuthServiceTests(unittest.TestCase):
 
     def test_authenticate_ignores_last_used_save_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            service = AuthService(Path(tmp_dir) / "auth_keys.json")
+            service = AuthService(JSONStorageBackend(Path(tmp_dir) / "accounts.json", Path(tmp_dir) / "auth_keys.json"))
             item, raw_key = service.create_key(role="user", name="Alice")
 
             def fail_save() -> None:
