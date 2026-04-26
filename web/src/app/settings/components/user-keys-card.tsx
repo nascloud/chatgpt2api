@@ -44,6 +44,7 @@ export function UserKeysCard() {
   const [isCreating, setIsCreating] = useState(false);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [revealedKey, setRevealedKey] = useState("");
+  const [deletingItem, setDeletingItem] = useState<UserKey | null>(null);
 
   const load = async () => {
     setIsLoading(true);
@@ -106,14 +107,16 @@ export function UserKeysCard() {
     }
   };
 
-  const handleDelete = async (item: UserKey) => {
-    if (!window.confirm(`确认删除用户密钥「${item.name}」吗？`)) {
+  const handleDelete = async () => {
+    if (!deletingItem) {
       return;
     }
+    const item = deletingItem;
     setItemPending(item.id, true);
     try {
       const data = await deleteUserKey(item.id);
       setItems(data.items);
+      setDeletingItem(null);
       toast.success("用户密钥已删除");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "删除用户密钥失败");
@@ -217,7 +220,7 @@ export function UserKeysCard() {
                         type="button"
                         variant="outline"
                         className="h-9 rounded-xl border-rose-200 bg-white px-4 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                        onClick={() => void handleDelete(item)}
+                        onClick={() => setDeletingItem(item)}
                         disabled={isPending}
                       >
                         {isPending ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
@@ -267,6 +270,37 @@ export function UserKeysCard() {
             >
               {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
               创建
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deletingItem)} onOpenChange={(open) => (!open ? setDeletingItem(null) : null)}>
+        <DialogContent className="rounded-2xl p-6">
+          <DialogHeader className="gap-2">
+            <DialogTitle>删除用户密钥</DialogTitle>
+            <DialogDescription className="text-sm leading-6">
+              确认删除用户密钥「{deletingItem?.name}」吗？删除后该密钥将无法继续调用接口。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-10 rounded-xl bg-stone-100 px-5 text-stone-700 hover:bg-stone-200"
+              onClick={() => setDeletingItem(null)}
+              disabled={deletingItem ? pendingIds.has(deletingItem.id) : false}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              className="h-10 rounded-xl bg-rose-600 px-5 text-white hover:bg-rose-700"
+              onClick={() => void handleDelete()}
+              disabled={deletingItem ? pendingIds.has(deletingItem.id) : false}
+            >
+              {deletingItem && pendingIds.has(deletingItem.id) ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              删除
             </Button>
           </DialogFooter>
         </DialogContent>

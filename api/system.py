@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict
 
-from api.support import require_admin, require_identity
+from api.support import require_admin, require_identity, resolve_image_base_url
 from services.config import config
+from services.image_service import list_images
+from services.log_service import log_service
 from services.proxy_service import test_proxy
 
 
@@ -44,6 +46,16 @@ def create_router(app_version: str) -> APIRouter:
     async def save_settings(body: SettingsUpdateRequest, authorization: str | None = Header(default=None)):
         require_admin(authorization)
         return {"config": config.update(body.model_dump(mode="python"))}
+
+    @router.get("/api/images")
+    async def get_images(request: Request, start_date: str = "", end_date: str = "", authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return list_images(resolve_image_base_url(request), start_date=start_date.strip(), end_date=end_date.strip())
+
+    @router.get("/api/logs")
+    async def get_logs(type: str = "", start_date: str = "", end_date: str = "", authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return {"items": log_service.list(type=type.strip(), start_date=start_date.strip(), end_date=end_date.strip())}
 
     @router.post("/api/proxy/test")
     async def test_proxy_endpoint(body: ProxyTestRequest, authorization: str | None = Header(default=None)):

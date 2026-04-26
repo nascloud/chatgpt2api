@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 type LightboxImage = {
   id: string;
   src: string;
+  sizeLabel?: string;
+  dimensions?: string;
 };
 
 type ImageLightboxProps = {
@@ -79,6 +81,11 @@ export function ImageLightbox({
 
           {/* toolbar */}
           <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+            {current.sizeLabel || current.dimensions ? (
+              <span className="rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white/90">
+                {[current.sizeLabel, current.dimensions].filter(Boolean).join(" · ")}
+              </span>
+            ) : null}
             {images.length > 1 && (
               <span className="rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white/90">
                 {currentIndex + 1} / {images.length}

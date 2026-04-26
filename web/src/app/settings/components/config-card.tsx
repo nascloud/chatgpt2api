@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { testProxy, type ProxyTestResult } from "@/lib/api";
 
@@ -18,6 +19,8 @@ export function ConfigCard() {
   const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
   const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
   const setRefreshAccountIntervalMinute = useSettingsStore((state) => state.setRefreshAccountIntervalMinute);
+  const setImageRetentionDays = useSettingsStore((state) => state.setImageRetentionDays);
+  const setAutoRemoveInvalidAccounts = useSettingsStore((state) => state.setAutoRemoveInvalidAccounts);
   const setProxy = useSettingsStore((state) => state.setProxy);
   const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
   const saveConfig = useSettingsStore((state) => state.saveConfig);
@@ -120,6 +123,23 @@ export function ConfigCard() {
             />
             <p className="text-xs text-stone-500">用于生成图片结果的访问前缀地址。</p>
           </div>
+          <div className="space-y-2">
+            <label className="text-sm text-stone-700">图片自动清理</label>
+            <Input
+              value={String(config?.image_retention_days || "")}
+              onChange={(event) => setImageRetentionDays(event.target.value)}
+              placeholder="30"
+              className="h-10 rounded-xl border-stone-200 bg-white"
+            />
+            <p className="text-xs text-stone-500">自动删除多少天前的本地图片。</p>
+          </div>
+          <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+            <Checkbox
+              checked={Boolean(config?.auto_remove_invalid_accounts)}
+              onCheckedChange={(checked) => setAutoRemoveInvalidAccounts(Boolean(checked))}
+            />
+            自动移除异常账号
+          </label>
         </div>
 
         <div className="flex justify-end">

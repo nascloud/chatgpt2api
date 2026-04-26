@@ -634,6 +634,7 @@ class OpenAIBackendAPI:
         return data.get("download_url") or data.get("url") or ""
 
     def _save_image_bytes(self, image_data: bytes) -> str:
+        config.cleanup_old_images()
         file_name = f"{int(time.time())}_{new_uuid().replace('-', '')}.png"
         relative_dir = Path(time.strftime("%Y"), time.strftime("%m"), time.strftime("%d"))
         file_path = config.images_dir / relative_dir / file_name

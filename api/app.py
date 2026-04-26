@@ -23,6 +23,7 @@ def create_app() -> FastAPI:
     async def lifespan(_: FastAPI):
         stop_event = Event()
         thread = start_limited_account_watcher(stop_event)
+        config.cleanup_old_images()
         try:
             yield
         finally:

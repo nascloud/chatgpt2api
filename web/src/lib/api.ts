@@ -54,6 +54,24 @@ export type SettingsConfig = {
   proxy: string;
   base_url?: string;
   refresh_account_interval_minute?: number | string;
+  image_retention_days?: number | string;
+  auto_remove_invalid_accounts?: boolean;
+  [key: string]: unknown;
+};
+
+export type ManagedImage = {
+  name: string;
+  date: string;
+  size: number;
+  url: string;
+  created_at: string;
+};
+
+export type SystemLog = {
+  time: string;
+  type: "call" | "account" | string;
+  summary?: string;
+  detail?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -178,6 +196,23 @@ export async function updateSettingsConfig(settings: SettingsConfig) {
     method: "POST",
     body: settings,
   });
+}
+
+export async function fetchManagedImages(filters: { start_date?: string; end_date?: string }) {
+  const params = new URLSearchParams();
+  if (filters.start_date) params.set("start_date", filters.start_date);
+  if (filters.end_date) params.set("end_date", filters.end_date);
+  return httpRequest<{ items: ManagedImage[]; groups: Array<{ date: string; items: ManagedImage[] }> }>(
+    `/api/images${params.toString() ? `?${params.toString()}` : ""}`,
+  );
+}
+
+export async function fetchSystemLogs(filters: { type?: string; start_date?: string; end_date?: string }) {
+  const params = new URLSearchParams();
+  if (filters.type) params.set("type", filters.type);
+  if (filters.start_date) params.set("start_date", filters.start_date);
+  if (filters.end_date) params.set("end_date", filters.end_date);
+  return httpRequest<{ items: SystemLog[] }>(`/api/logs${params.toString() ? `?${params.toString()}` : ""}`);
 }
 
 export async function fetchUserKeys() {

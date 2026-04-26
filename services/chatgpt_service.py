@@ -13,9 +13,11 @@ from fastapi import HTTPException
 from services.account_service import AccountService
 from services.anthropic_protocol import preprocess_payload
 from services.config import config
+from services.log_service import LOG_TYPE_ACCOUNT, log_service
 from services.openai_backend_api import CODEX_IMAGE_MODEL, OpenAIBackendAPI
 from utils.helper import (
     IMAGE_MODELS,
+    anonymize_token,
     extract_chat_image,
     extract_chat_prompt,
     extract_image_from_message_content,
@@ -43,6 +45,7 @@ def is_token_invalid_error(message: str) -> bool:
 
 
 def _save_image_bytes(image_data: bytes, base_url: str | None = None) -> str:
+    config.cleanup_old_images()
     file_hash = hashlib.md5(image_data).hexdigest()
     timestamp = int(time.time())
     filename = f"{timestamp}_{file_hash}.png"
@@ -348,7 +351,7 @@ class ChatGPTService:
             raise HTTPException(status_code=502, detail={"error": "image generation failed"})
 
         created = int(image_result.get("created") or time.time())
-        return {
+        response = {
             "id": f"resp_{created}",
             "object": "response",
             "created_at": created,
@@ -359,6 +362,7 @@ class ChatGPTService:
             "output": output,
             "parallel_tool_calls": False,
         }
+        return response
 
     def _stream_token_image_response(self, body: dict[str, object]) -> Iterator[dict[str, object]]:
         prompt = extract_response_prompt(body.get("input"))
@@ -453,7 +457,8 @@ class ChatGPTService:
                 b64_json = str(item.get("b64_json") or "").strip()
                 if response_format == "b64_json":
                     if b64_json:
-                        formatted_items.append({"b64_json": b64_json, "revised_prompt": revised_prompt})
+                        image_url = _save_image_bytes(base64.b64decode(b64_json), base_url)
+                        formatted_items.append({"b64_json": b64_json, "url": image_url, "revised_prompt": revised_prompt})
                     continue
                 if not b64_json:
                     continue
@@ -461,6 +466,14 @@ class ChatGPTService:
                 formatted_items.append(
                     {"url": _save_image_bytes(image_data, base_url), "revised_prompt": revised_prompt})
         return {"created": created, "data": formatted_items}
+
+    def _remove_invalid_token(self, access_token: str, event: str) -> bool:
+        if not config.auto_remove_invalid_accounts:
+            return False
+        removed = self.account_service.remove_token(access_token)
+        if removed:
+            log_service.add(LOG_TYPE_ACCOUNT, "自动移除异常账号", {"source": event, "token": anonymize_token(access_token)})
+        return removed
 
     @staticmethod
     def _extract_image_data_urls(markdown_content: str) -> list[str]:
@@ -639,7 +652,7 @@ class ChatGPTService:
                         "status": account.get("status") if account else "unknown",
                     })
                     if is_token_invalid_error(message):
-                        self.account_service.remove_token(request_token)
+                        self._remove_invalid_token(request_token, "image_generate")
                         logger.warning({
                             "event": "image_generate_remove_invalid_token",
                             "request_token": request_token,
@@ -660,10 +673,11 @@ class ChatGPTService:
             data = result.get("data")
             if isinstance(data, list):
                 image_items.extend(item for item in data if isinstance(item, dict))
-        return {
+        result = {
             "created": created,
             "data": image_items,
         }
+        return result
 
     def stream_image_generation(
             self,
@@ -742,7 +756,7 @@ class ChatGPTService:
                         "status": account.get("status") if account else "unknown",
                     })
                     if not emitted_for_request and is_token_invalid_error(message):
-                        self.account_service.remove_token(request_token)
+                        self._remove_invalid_token(request_token, "image_generate_stream")
                         logger.warning({
                             "event": "image_generate_stream_remove_invalid_token",
                             "request_token": request_token,
@@ -822,7 +836,7 @@ class ChatGPTService:
                         "status": account.get("status") if account else "unknown",
                     })
                     if is_token_invalid_error(message):
-                        self.account_service.remove_token(request_token)
+                        self._remove_invalid_token(request_token, "image_edit")
                         logger.warning({
                             "event": "image_edit_remove_invalid_token",
                             "request_token": request_token,
@@ -833,10 +847,11 @@ class ChatGPTService:
         if not image_items:
             raise ImageGenerationError(last_error or "image edit failed")
 
-        return {
+        result = {
             "created": created,
             "data": image_items,
         }
+        return result
 
     def stream_image_edit(
             self,
@@ -923,7 +938,7 @@ class ChatGPTService:
                         "status": account.get("status") if account else "unknown",
                     })
                     if not emitted_for_request and is_token_invalid_error(message):
-                        self.account_service.remove_token(request_token)
+                        self._remove_invalid_token(request_token, "image_edit_stream")
                         logger.warning({
                             "event": "image_edit_stream_remove_invalid_token",
                             "request_token": request_token,
@@ -1044,7 +1059,7 @@ class ChatGPTService:
                     "status": account.get("status") if account else "unknown",
                 })
                 if not emitted and is_token_invalid_error(message):
-                    self.account_service.remove_token(request_token)
+                    self._remove_invalid_token(request_token, "image_stream")
                     logger.warning({
                         "event": "image_stream_remove_invalid_token",
                         "request_token": request_token,
@@ -1056,7 +1071,8 @@ class ChatGPTService:
         model = str(body.get("model") or "auto").strip() or "auto"
         messages = self._chat_messages_from_body(body)
         try:
-            return self._new_backend(self._get_text_access_token()).chat_completions(messages=messages, model=model, stream=False)
+            result = self._new_backend(self._get_text_access_token()).chat_completions(messages=messages, model=model, stream=False)
+            return result
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
@@ -1082,13 +1098,14 @@ class ChatGPTService:
         model = str(body.get("model") or "auto").strip() or "auto"
         messages = self._chat_messages_from_body(body)
         try:
-            return self._new_backend(self._get_text_access_token()).messages(
+            result = self._new_backend(self._get_text_access_token()).messages(
                 messages=messages,
                 model=model,
                 stream=False,
                 system=body.get("system"),
                 tools=body.get("tools"),
             )
+            return result
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
@@ -1141,12 +1158,13 @@ class ChatGPTService:
 
     def create_response(self, body: dict[str, object]) -> dict[str, object]:
         if self._is_text_response_request(body):
-            return self._create_text_response(body)
+            result = self._create_text_response(body)
+            return result
         if not self._is_codex_image_response_request(body):
             return self._create_token_image_response(body)
         try:
             access_token = self._get_response_access_token(body)
-            return self._new_backend(access_token).responses(
+            result = self._new_backend(access_token).responses(
                 input=body.get("input") or "",
                 model=str(body.get("model") or "gpt-5.4").strip() or "gpt-5.4",
                 tools=body.get("tools") if isinstance(body.get("tools"), list) else None,
@@ -1155,5 +1173,6 @@ class ChatGPTService:
                 stream=False,
                 store=bool(body.get("store")),
             )
+            return result
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc

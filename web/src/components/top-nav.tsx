@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 const adminNavItems = [
   { href: "/image", label: "画图" },
   { href: "/accounts", label: "号池管理" },
+  { href: "/image-manager", label: "图片管理" },
+  { href: "/logs", label: "日志管理" },
   { href: "/settings", label: "设置" },
 ];
 

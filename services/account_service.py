@@ -12,6 +12,10 @@ from datetime import datetime
 from curl_cffi.requests import Session
 
 from services.config import config
+from services.log_service import (
+    LOG_TYPE_ACCOUNT,
+    log_service,
+)
 from services.proxy_service import proxy_settings
 from services.storage.base import StorageBackend
 from utils.helper import anonymize_token
@@ -248,6 +252,9 @@ class AccountService:
             message = str(exc)
             print(f"[account-available] refresh token={token_ref} fail {message}")
             if "/backend-api/me failed: HTTP 401" in message:
+                if config.auto_remove_invalid_accounts and self.remove_token(access_token):
+                    log_service.add(LOG_TYPE_ACCOUNT, "自动移除异常账号", {"source": "refresh_account_state", "token": token_ref})
+                    return None
                 return self.update_account(
                     access_token,
                     {
@@ -331,6 +338,7 @@ class AccountService:
             self._accounts = list(indexed.values())
             self._save_accounts()
             items = self._public_items(self._accounts)
+            log_service.add(LOG_TYPE_ACCOUNT, f"新增 {added} 个账号，跳过 {skipped} 个", {"added": added, "skipped": skipped})
         return {"added": added, "skipped": skipped, "items": items}
 
     def delete_accounts(self, tokens: list[str]) -> dict:
@@ -348,6 +356,7 @@ class AccountService:
                 self._index = 0
             if removed:
                 self._save_accounts()
+                log_service.add(LOG_TYPE_ACCOUNT, f"删除 {removed} 个账号", {"removed": removed})
             items = self._public_items(self._accounts)
         return {"removed": removed, "items": items}
 
@@ -367,6 +376,7 @@ class AccountService:
                 return None
             self._accounts[index] = account
             self._save_accounts()
+            log_service.add(LOG_TYPE_ACCOUNT, "更新账号", {"token": anonymize_token(access_token), "status": account.get("status")})
             return dict(account)
         return None
 
@@ -495,13 +505,10 @@ class AccountService:
                     message = str(exc)
                     print(f"[account-refresh] fail {anonymize_token(access_token)} {message}")
                     if "/backend-api/me failed: HTTP 401" in message:
-                        self.update_account(
-                            access_token,
-                            {
-                                "status": "异常",
-                                "quota": 0,
-                            },
-                        )
+                        if config.auto_remove_invalid_accounts and self.remove_token(access_token):
+                            log_service.add(LOG_TYPE_ACCOUNT, "自动移除异常账号", {"source": "refresh_accounts", "token": anonymize_token(access_token)})
+                        else:
+                            self.update_account(access_token, {"status": "异常", "quota": 0})
                         message = "检测到封号"
                     errors.append({"access_token": access_token, "error": message})
 

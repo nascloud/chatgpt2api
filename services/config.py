@@ -5,6 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
+import time
 
 from services.storage.base import StorageBackend
 
@@ -103,10 +104,38 @@ class ConfigStore:
             return 5
 
     @property
+    def image_retention_days(self) -> int:
+        try:
+            return max(1, int(self.data.get("image_retention_days", 30)))
+        except (TypeError, ValueError):
+            return 30
+
+    @property
+    def auto_remove_invalid_accounts(self) -> bool:
+        value = self.data.get("auto_remove_invalid_accounts", False)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    @property
     def images_dir(self) -> Path:
         path = DATA_DIR / "images"
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def cleanup_old_images(self) -> int:
+        cutoff = time.time() - self.image_retention_days * 86400
+        removed = 0
+        for path in self.images_dir.rglob("*"):
+            if path.is_file() and path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        for path in sorted((p for p in self.images_dir.rglob("*") if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+            try:
+                path.rmdir()
+            except OSError:
+                pass
+        return removed
 
     @property
     def base_url(self) -> str:
@@ -126,6 +155,9 @@ class ConfigStore:
 
     def get(self) -> dict[str, object]:
         data = dict(self.data)
+        data["refresh_account_interval_minute"] = self.refresh_account_interval_minute
+        data["image_retention_days"] = self.image_retention_days
+        data["auto_remove_invalid_accounts"] = self.auto_remove_invalid_accounts
         data.pop("auth-key", None)
         return data
 
