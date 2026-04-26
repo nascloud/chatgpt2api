@@ -13,6 +13,7 @@ from curl_cffi import requests
 from PIL import Image
 
 from services.account_service import account_service
+from services.anthropic_protocol import message_response, stream_events
 from services.config import config
 from services.proxy_service import proxy_settings
 from utils.helper import build_chat_image_markdown_content, ensure_ok, new_uuid, parse_sse_lines
@@ -1231,9 +1232,22 @@ class OpenAIBackendAPI:
                 return event
         return {}
 
+    def _conversation_payload_debug(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
+        details = []
+        for item in messages:
+            content = item.get("content") if isinstance(item, dict) else {}
+            parts = content.get("parts") if isinstance(content, dict) else []
+            text = "\n".join(str(part) for part in parts) if isinstance(parts, list) else ""
+            details.append({"role": (item.get("author") or {}).get("role") if isinstance(item, dict) and isinstance(item.get("author"), dict) else "", "chars": len(text), "preview": text[:120]})
+        return {"bytes": len(raw.encode("utf-8")), "chars": len(raw), "message_count": len(messages), "messages": details}
+
     def _stream_events(self, path: str, requirements: ChatRequirements, payload: Dict[str, Any]) -> Iterator[
         Dict[str, Any]]:
         """向 conversation 接口发起请求，并逐条产出 SSE 事件。"""
+        payload_debug = self._conversation_payload_debug(payload)
+        logger.info({"event": "conversation_payload_debug", "path": path, **payload_debug})
         response = self.session.post(
             self.base_url + path,
             headers=self._conversation_headers(path, requirements),
@@ -1241,6 +1255,8 @@ class OpenAIBackendAPI:
             timeout=300,
             stream=True,
         )
+        if response.status_code >= 400:
+            logger.warning({"event": "conversation_request_failed", "path": path, "status_code": response.status_code, "payload": payload_debug, "response_text": response.text[:500]})
         ensure_ok(response, path)
         yield from parse_sse_lines(response)
 
@@ -1445,95 +1461,14 @@ class OpenAIBackendAPI:
             }],
         }
 
-    def _anthropic_message_response(self, model: str, messages: list[Dict[str, Any]], text: str) -> Dict[str, Any]:
+    def _anthropic_message_response(self, model: str, messages: list[Dict[str, Any]], text: str, tools: Any = None) -> Dict[str, Any]:
         """把对话结果整理成 Anthropic `/v1/messages` 风格结构。"""
-        prompt_tokens = self._count_message_tokens(messages, model)
-        completion_tokens = self._count_text_tokens(text, model)
-        return {
-            "id": f"msg_{new_uuid()}",
-            "type": "message",
-            "role": "assistant",
-            "model": model,
-            "content": [{
-                "type": "text",
-                "text": text,
-            }],
-            "stop_reason": "end_turn",
-            "stop_sequence": None,
-            "usage": {
-                "input_tokens": prompt_tokens,
-                "output_tokens": completion_tokens,
-            },
-        }
+        return message_response(model, text, self._count_message_tokens(messages, model), self._count_text_tokens(text, model), tools)
 
-    def _stream_anthropic_messages(self, messages: list[Dict[str, Any]], model: str = "auto") -> Iterator[
+    def _stream_anthropic_messages(self, messages: list[Dict[str, Any]], model: str = "auto", tools: Any = None) -> Iterator[
         Dict[str, Any]]:
         """返回 Anthropic `/v1/messages` 风格的流式事件。"""
-        message_id = f"msg_{new_uuid()}"
-        created = int(time.time())
-        current_text = ""
-
-        yield {
-            "type": "message_start",
-            "message": {
-                "id": message_id,
-                "type": "message",
-                "role": "assistant",
-                "model": model,
-                "content": [],
-                "stop_reason": None,
-                "stop_sequence": None,
-                "usage": {
-                    "input_tokens": self._count_message_tokens(messages, model),
-                    "output_tokens": 0,
-                },
-            },
-        }
-        yield {
-            "type": "content_block_start",
-            "index": 0,
-            "content_block": {
-                "type": "text",
-                "text": "",
-            },
-        }
-
-        for chunk in self._stream_chat_completions(messages, model):
-            choice = (chunk.get("choices") or [{}])[0]
-            delta = choice.get("delta") or {}
-            text_delta = delta.get("content", "")
-            if text_delta:
-                current_text += text_delta
-                yield {
-                    "type": "content_block_delta",
-                    "index": 0,
-                    "delta": {
-                        "type": "text_delta",
-                        "text": text_delta,
-                    },
-                }
-
-            if choice.get("finish_reason"):
-                yield {
-                    "type": "content_block_stop",
-                    "index": 0,
-                }
-                yield {
-                    "type": "message_delta",
-                    "delta": {
-                        "stop_reason": "end_turn",
-                        "stop_sequence": None,
-                    },
-                    "usage": {
-                        "output_tokens": self._count_text_tokens(current_text, model),
-                    },
-                }
-                break
-
-        yield {
-            "type": "message_stop",
-            "created": created,
-        }
+        yield from stream_events(self._stream_chat_completions(messages, model), model, self._count_message_tokens(messages, model), lambda text: self._count_text_tokens(text, model), tools)
 
     def _iter_response_events(self, response: requests.Response) -> Iterator[Dict[str, Any]]:
         """按 Responses 接口事件格式直通输出，不额外包装标准事件。"""
@@ -1633,10 +1568,10 @@ class OpenAIBackendAPI:
         return self._chat_completion_response(model, normalized_messages, result["text"])
 
     def messages(self, messages: list[Dict[str, Any]], model: str = "auto", stream: bool = False,
-                 system: Any = None) -> Dict[str, Any] | Iterator[Dict[str, Any]]:
+                 system: Any = None, tools: Any = None) -> Dict[str, Any] | Iterator[Dict[str, Any]]:
         """返回 Anthropic `/v1/messages` 风格结果，支持 stream 模式。"""
         normalized_messages = self._normalize_messages(messages, system)
         if stream:
-            return self._stream_anthropic_messages(normalized_messages, model)
+            return self._stream_anthropic_messages(normalized_messages, model, tools)
         result = self._complete_chat(normalized_messages, model)
-        return self._anthropic_message_response(model, normalized_messages, result["text"])
+        return self._anthropic_message_response(model, normalized_messages, result["text"], tools)

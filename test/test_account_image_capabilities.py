@@ -86,7 +86,7 @@ class AuthServiceTests(unittest.TestCase):
             self.assertEqual(item["role"], "user")
             self.assertEqual(item["name"], "Alice")
             self.assertTrue(item["enabled"])
-            self.assertTrue(raw_key.startswith("cg2a_user_"))
+            self.assertTrue(raw_key.startswith("sk-"))
 
             authed = service.authenticate(raw_key)
             self.assertIsNotNone(authed)

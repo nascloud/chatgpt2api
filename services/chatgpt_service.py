@@ -11,6 +11,7 @@ from typing import Any, Iterable, Iterator
 from fastapi import HTTPException
 
 from services.account_service import AccountService
+from services.anthropic_protocol import preprocess_payload
 from services.config import config
 from services.openai_backend_api import CODEX_IMAGE_MODEL, OpenAIBackendAPI
 from utils.helper import (
@@ -83,8 +84,14 @@ class ChatGPTService:
         return OpenAIBackendAPI(access_token=access_token)
 
     def _get_text_access_token(self) -> str:
-        tokens = self.account_service.list_tokens()
-        return tokens[0] if tokens else ""
+        try:
+            for access_token in self.account_service.list_tokens():
+                status = str((self.account_service.get_account(access_token) or {}).get("status") or "").strip()
+                if status not in {"禁用", "异常"}:
+                    return access_token
+        except Exception:
+            pass
+        return ""
 
     @staticmethod
     def _encode_images(images: Iterable[tuple[bytes, str, str]]) -> list[str]:
@@ -1071,6 +1078,7 @@ class ChatGPTService:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
     def create_message(self, body: dict[str, object]) -> dict[str, object]:
+        body = preprocess_payload(dict(body))
         model = str(body.get("model") or "auto").strip() or "auto"
         messages = self._chat_messages_from_body(body)
         try:
@@ -1079,11 +1087,13 @@ class ChatGPTService:
                 model=model,
                 stream=False,
                 system=body.get("system"),
+                tools=body.get("tools"),
             )
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
     def stream_message(self, body: dict[str, object]) -> Iterator[dict[str, object]]:
+        body = preprocess_payload(dict(body))
         model = str(body.get("model") or "auto").strip() or "auto"
         messages = self._chat_messages_from_body(body)
         try:
@@ -1092,6 +1102,7 @@ class ChatGPTService:
                 model=model,
                 stream=True,
                 system=body.get("system"),
+                tools=body.get("tools"),
             )
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
