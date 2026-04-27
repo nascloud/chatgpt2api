@@ -3,6 +3,12 @@
   "refresh_account_interval_minute": 60,
   "image_retention_days": 15,
   "auto_remove_invalid_accounts": false,
+  "log_levels": [
+    "debug",
+    "error",
+    "info",
+    "warning"
+  ],
   "proxy": "",
   "base_url": ""
 }

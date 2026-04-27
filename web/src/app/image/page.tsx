@@ -11,6 +11,8 @@ import { ImageLightbox } from "@/components/image-lightbox";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -22,6 +24,7 @@ import {
   deleteImageConversation,
   getImageConversationStats,
   listImageConversations,
+  saveImageConversation,
   saveImageConversations,
   type ImageConversation,
   type ImageConversationMode,
@@ -192,6 +195,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const [lightboxImages, setLightboxImages] = useState<ImageLightboxItem[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: "one"; id: string } | { type: "all" } | null>(null);
 
   const parsedCount = useMemo(() => Math.max(1, Math.min(10, Number(imageCount) || 1)), [imageCount]);
   const selectedConversation = useMemo(
@@ -206,6 +210,13 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       }, 0),
     [conversations],
   );
+  const deleteConfirmTitle = deleteConfirm?.type === "all" ? "清空历史记录" : deleteConfirm?.type === "one" ? "删除对话" : "";
+  const deleteConfirmDescription =
+    deleteConfirm?.type === "all"
+      ? "确认删除全部图片历史记录吗？删除后无法恢复。"
+      : deleteConfirm?.type === "one"
+        ? "确认删除这条图片对话吗？删除后无法恢复。"
+        : "";
 
   useEffect(() => {
     conversationsRef.current = conversations;
@@ -328,7 +339,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     ]);
     conversationsRef.current = nextConversations;
     setConversations(nextConversations);
-    await saveImageConversations(nextConversations);
+    await saveImageConversation(conversation);
   };
 
   const updateConversation = useCallback(
@@ -346,7 +357,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       conversationsRef.current = nextConversations;
       setConversations(nextConversations);
       if (options.persist !== false) {
-        await saveImageConversations(nextConversations);
+        await saveImageConversation(nextConversation);
       }
     },
     [],
@@ -405,6 +416,29 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       const message = error instanceof Error ? error.message : "清空历史记录失败";
       toast.error(message);
     }
+  };
+
+  const openDeleteConversationConfirm = (id: string) => {
+    setIsHistoryOpen(false);
+    setDeleteConfirm({ type: "one", id });
+  };
+
+  const openClearHistoryConfirm = () => {
+    setIsHistoryOpen(false);
+    setDeleteConfirm({ type: "all" });
+  };
+
+  const handleConfirmDelete = async () => {
+    const target = deleteConfirm;
+    setDeleteConfirm(null);
+    if (!target) {
+      return;
+    }
+    if (target.type === "all") {
+      await handleClearHistory();
+      return;
+    }
+    await handleDeleteConversation(target.id);
   };
 
   const appendReferenceImages = useCallback(async (files: File[]) => {
@@ -720,7 +754,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     const draftTurn: ImageTurn = {
       id: turnId,
       prompt,
-      model: "auto",
+      model: "gpt-image-2",
       mode: imageMode,
       referenceImages: imageMode === "edit" ? referenceImages : [],
       count: parsedCount,
@@ -772,9 +806,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             isLoadingHistory={isLoadingHistory}
             selectedConversationId={selectedConversationId}
             onCreateDraft={handleCreateDraft}
-            onClearHistory={handleClearHistory}
+            onClearHistory={openClearHistoryConfirm}
             onSelectConversation={setSelectedConversationId}
-            onDeleteConversation={handleDeleteConversation}
+            onDeleteConversation={openDeleteConversationConfirm}
             formatConversationTime={formatConversationTime}
           />
         </div>
@@ -796,12 +830,12 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
                   handleCreateDraft();
                   setIsHistoryOpen(false);
                 }}
-                onClearHistory={handleClearHistory}
+                onClearHistory={openClearHistoryConfirm}
                 onSelectConversation={(id) => {
                   setSelectedConversationId(id);
                   setIsHistoryOpen(false);
                 }}
-                onDeleteConversation={handleDeleteConversation}
+                onDeleteConversation={openDeleteConversationConfirm}
                 formatConversationTime={formatConversationTime}
                 hideActionButtons
               />
@@ -829,7 +863,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             <Button
               variant="outline"
               className="h-10 rounded-2xl border-stone-200 bg-white/85 px-3 text-stone-600 shadow-sm"
-              onClick={() => void handleClearHistory()}
+              onClick={openClearHistoryConfirm}
               disabled={conversations.length === 0}
             >
               <Trash2 className="size-4" />
@@ -877,6 +911,27 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         onOpenChange={setLightboxOpen}
         onIndexChange={setLightboxIndex}
       />
+
+      {deleteConfirm ? (
+        <Dialog open onOpenChange={(open) => (!open ? setDeleteConfirm(null) : null)}>
+          <DialogContent showCloseButton={false} className="rounded-2xl p-6">
+            <DialogHeader className="gap-2">
+              <DialogTitle>{deleteConfirmTitle}</DialogTitle>
+              <DialogDescription className="text-sm leading-6">
+                {deleteConfirmDescription}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteConfirm(null)}>
+                取消
+              </Button>
+              <Button className="bg-rose-600 text-white hover:bg-rose-700" onClick={() => void handleConfirmDelete()}>
+                确认删除
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </>
   );
 }

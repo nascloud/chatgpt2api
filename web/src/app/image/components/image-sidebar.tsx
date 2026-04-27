@@ -30,7 +30,7 @@ export function ImageSidebar({
   hideActionButtons = false,
 }: ImageSidebarProps) {
   return (
-    <aside className="min-h-0">
+    <aside className="h-full min-h-0 overflow-hidden">
       <div className="flex h-full min-h-0 flex-col gap-2 py-1 sm:gap-3 sm:py-2">
         {!hideActionButtons && (
           <div className="flex items-center gap-2">
@@ -49,7 +49,7 @@ export function ImageSidebar({
           </div>
         )}
 
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-color:rgba(120,113,108,.45)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-stone-400/45 [&::-webkit-scrollbar-track]:bg-transparent">
           {isLoadingHistory ? (
             <div className="flex items-center gap-2 px-2 py-3 text-sm text-stone-500">
               <LoaderCircle className="size-4 animate-spin" />

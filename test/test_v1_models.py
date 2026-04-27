@@ -5,7 +5,7 @@ import unittest
 
 import requests
 
-from services.chatgpt_service import ChatGPTService
+from services.protocol import openai_v1_models
 
 
 AUTH_KEY = "chatgpt2api"
@@ -15,7 +15,7 @@ BASE_URL = "http://localhost:8000"
 class ModelListTests(unittest.TestCase):
     def test_list_models_function(self):
         """测试直接调用服务层获取模型列表。"""
-        result = ChatGPTService(None).list_models()
+        result = openai_v1_models.list_models()
         print("function result:")
         print(json.dumps(result, ensure_ascii=False, indent=2))
 

@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime
-import time
-
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from api.support import raise_image_quota_error, require_identity, resolve_image_base_url
-from services.account_service import account_service
-from services.chatgpt_service import ChatGPTService, ImageGenerationError
-from services.log_service import (
-    LOG_TYPE_CALL,
-    log_service,
+from api.support import require_identity, resolve_image_base_url
+from services.log_service import LoggedCall
+from services.protocol import (
+    anthropic_v1_messages,
+    openai_v1_chat_complete,
+    openai_v1_image_edit,
+    openai_v1_image_generations,
+    openai_v1_models,
+    openai_v1_response,
 )
-from utils.helper import anthropic_sse_stream, is_image_chat_request, sse_json_stream
 
 
 class ImageGenerationRequest(BaseModel):
@@ -55,66 +53,14 @@ class AnthropicMessageRequest(BaseModel):
     stream: bool | None = None
 
 
-def _identity_detail(identity: dict[str, object]) -> dict[str, object]:
-    return {"key_id": identity.get("id"), "key_name": identity.get("name"), "role": identity.get("role")}
-
-
-def _collect_urls(value: object) -> list[str]:
-    urls: list[str] = []
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if key == "url" and isinstance(item, str):
-                urls.append(item)
-            elif key == "urls" and isinstance(item, list):
-                urls.extend(str(url) for url in item if isinstance(url, str))
-            else:
-                urls.extend(_collect_urls(item))
-    elif isinstance(value, list):
-        for item in value:
-            urls.extend(_collect_urls(item))
-    return urls
-
-
-def _log_call(summary: str, identity: dict[str, object], endpoint: str, model: str, started: float, result: object = None, status: str = "success") -> None:
-    detail = {
-        **_identity_detail(identity),
-        "endpoint": endpoint,
-        "model": model,
-        "started_at": datetime.fromtimestamp(started).strftime("%Y-%m-%d %H:%M:%S"),
-        "ended_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "duration_ms": int((time.time() - started) * 1000),
-        "status": status,
-    }
-    urls = _collect_urls(result)
-    if urls:
-        detail["urls"] = urls
-    log_service.add(LOG_TYPE_CALL, summary, detail)
-
-
-def _stream_with_log(items, summary: str, identity: dict[str, object], endpoint: str, model: str, started: float):
-    urls: list[str] = []
-    failed = False
-    try:
-        for item in items:
-            urls.extend(_collect_urls(item))
-            yield item
-    except Exception:
-        failed = True
-        _log_call(summary.replace("结束", "失败"), identity, endpoint, model, started, {"urls": list(dict.fromkeys(urls))}, "failed")
-        raise
-    finally:
-        if not failed:
-            _log_call(summary, identity, endpoint, model, started, {"urls": list(dict.fromkeys(urls))})
-
-
-def create_router(chatgpt_service: ChatGPTService) -> APIRouter:
+def create_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/v1/models")
     async def list_models(authorization: str | None = Header(default=None)):
         require_identity(authorization)
         try:
-            return await run_in_threadpool(chatgpt_service.list_models)
+            return await run_in_threadpool(openai_v1_models.list_models)
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
@@ -125,37 +71,10 @@ def create_router(chatgpt_service: ChatGPTService) -> APIRouter:
             authorization: str | None = Header(default=None),
     ):
         identity = require_identity(authorization)
-        started = time.time()
-        base_url = resolve_image_base_url(request)
-        if body.stream:
-            try:
-                await run_in_threadpool(account_service.get_available_access_token)
-            except RuntimeError as exc:
-                raise_image_quota_error(exc)
-            return StreamingResponse(
-                sse_json_stream(
-                    _stream_with_log(
-                        chatgpt_service.stream_image_generation(
-                            body.prompt, body.model, body.n, body.size, body.response_format, base_url
-                        ),
-                        "文生图流式调用结束",
-                        identity,
-                        "/v1/images/generations",
-                        body.model,
-                        started,
-                    )
-                ),
-                media_type="text/event-stream",
-            )
-        try:
-            result = await run_in_threadpool(
-                chatgpt_service.generate_with_pool, body.prompt, body.model, body.n, body.size, body.response_format, base_url
-            )
-            _log_call("文生图调用完成", identity, "/v1/images/generations", body.model, started, result)
-            return result
-        except ImageGenerationError as exc:
-            _log_call("文生图调用失败", identity, "/v1/images/generations", body.model, started, {"error": str(exc)}, "failed")
-            raise_image_quota_error(exc)
+        payload = body.model_dump(mode="python")
+        payload["base_url"] = resolve_image_base_url(request)
+        call = LoggedCall(identity, "/v1/images/generations", body.model, "文生图")
+        return await call.run(openai_v1_image_generations.handle, payload)
 
     @router.post("/v1/images/edits")
     async def edit_images(
@@ -171,85 +90,45 @@ def create_router(chatgpt_service: ChatGPTService) -> APIRouter:
             stream: bool | None = Form(default=None),
     ):
         identity = require_identity(authorization)
-        started = time.time()
         if n < 1 or n > 4:
             raise HTTPException(status_code=400, detail={"error": "n must be between 1 and 4"})
         uploads = [*(image or []), *(image_list or [])]
         if not uploads:
             raise HTTPException(status_code=400, detail={"error": "image file is required"})
-        base_url = resolve_image_base_url(request)
         images: list[tuple[bytes, str, str]] = []
         for upload in uploads:
             image_data = await upload.read()
             if not image_data:
                 raise HTTPException(status_code=400, detail={"error": "image file is empty"})
             images.append((image_data, upload.filename or "image.png", upload.content_type or "image/png"))
-        if stream:
-            if not account_service.has_available_account():
-                raise_image_quota_error(RuntimeError("no available image quota"))
-            return StreamingResponse(
-                sse_json_stream(_stream_with_log(
-                    chatgpt_service.stream_image_edit(prompt, images, model, n, size, response_format, base_url),
-                    "图生图流式调用结束",
-                    identity,
-                    "/v1/images/edits",
-                    model,
-                    started,
-                )),
-                media_type="text/event-stream",
-            )
-        try:
-            result = await run_in_threadpool(
-                chatgpt_service.edit_with_pool, prompt, images, model, n, size, response_format, base_url
-            )
-            _log_call("图生图调用完成", identity, "/v1/images/edits", model, started, result)
-            return result
-        except ImageGenerationError as exc:
-            _log_call("图生图调用失败", identity, "/v1/images/edits", model, started, {"error": str(exc)}, "failed")
-            raise_image_quota_error(exc)
+        payload = {
+            "prompt": prompt,
+            "images": images,
+            "model": model,
+            "n": n,
+            "size": size,
+            "response_format": response_format,
+            "stream": stream,
+            "base_url": resolve_image_base_url(request),
+        }
+        call = LoggedCall(identity, "/v1/images/edits", model, "图生图")
+        return await call.run(openai_v1_image_edit.handle, payload)
 
     @router.post("/v1/chat/completions")
     async def create_chat_completion(body: ChatCompletionRequest, authorization: str | None = Header(default=None)):
         identity = require_identity(authorization)
-        started = time.time()
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
-        if bool(payload.get("stream")):
-            if is_image_chat_request(payload):
-                try:
-                    await run_in_threadpool(account_service.get_available_access_token)
-                except RuntimeError as exc:
-                    raise_image_quota_error(exc)
-            return StreamingResponse(
-                sse_json_stream(_stream_with_log(chatgpt_service.stream_chat_completion(payload), "文本生成流式调用结束", identity, "/v1/chat/completions", model, started)),
-                media_type="text/event-stream",
-            )
-        try:
-            result = await run_in_threadpool(chatgpt_service.create_chat_completion, payload)
-            _log_call("文本生成调用完成", identity, "/v1/chat/completions", model, started, result)
-            return result
-        except Exception as exc:
-            _log_call("文本生成调用失败", identity, "/v1/chat/completions", model, started, {"error": str(exc)}, "failed")
-            raise
+        call = LoggedCall(identity, "/v1/chat/completions", model, "文本生成")
+        return await call.run(openai_v1_chat_complete.handle, payload)
 
     @router.post("/v1/responses")
     async def create_response(body: ResponseCreateRequest, authorization: str | None = Header(default=None)):
         identity = require_identity(authorization)
-        started = time.time()
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
-        if bool(payload.get("stream")):
-            return StreamingResponse(
-                sse_json_stream(_stream_with_log(chatgpt_service.stream_response(payload), "Responses 流式调用结束", identity, "/v1/responses", model, started)),
-                media_type="text/event-stream",
-            )
-        try:
-            result = await run_in_threadpool(chatgpt_service.create_response, payload)
-            _log_call("Responses 调用完成", identity, "/v1/responses", model, started, result)
-            return result
-        except Exception as exc:
-            _log_call("Responses 调用失败", identity, "/v1/responses", model, started, {"error": str(exc)}, "failed")
-            raise
+        call = LoggedCall(identity, "/v1/responses", model, "Responses")
+        return await call.run(openai_v1_response.handle, payload)
 
     @router.post("/v1/messages")
     async def create_message(
@@ -259,20 +138,9 @@ def create_router(chatgpt_service: ChatGPTService) -> APIRouter:
             anthropic_version: str | None = Header(default=None, alias="anthropic-version"),
     ):
         identity = require_identity(authorization or (f"Bearer {x_api_key}" if x_api_key else None))
-        started = time.time()
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
-        if bool(payload.get("stream")):
-            return StreamingResponse(
-                anthropic_sse_stream(_stream_with_log(chatgpt_service.stream_message(payload), "Messages 流式调用结束", identity, "/v1/messages", model, started)),
-                media_type="text/event-stream",
-            )
-        try:
-            result = await run_in_threadpool(chatgpt_service.create_message, payload)
-            _log_call("Messages 调用完成", identity, "/v1/messages", model, started, result)
-            return result
-        except Exception as exc:
-            _log_call("Messages 调用失败", identity, "/v1/messages", model, started, {"error": str(exc)}, "failed")
-            raise
+        call = LoggedCall(identity, "/v1/messages", model, "Messages")
+        return await call.run(anthropic_v1_messages.handle, payload, sse="anthropic")
 
     return router

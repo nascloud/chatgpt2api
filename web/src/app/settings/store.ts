@@ -27,6 +27,7 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     refresh_account_interval_minute: Number(config.refresh_account_interval_minute || 5),
     image_retention_days: Number(config.image_retention_days || 30),
     auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
+    log_levels: Array.isArray(config.log_levels) ? config.log_levels : [],
     proxy: typeof config.proxy === "string" ? config.proxy : "",
     base_url: typeof config.base_url === "string" ? config.base_url : "",
   };
@@ -82,6 +83,7 @@ type SettingsStore = {
   setRefreshAccountIntervalMinute: (value: string) => void;
   setImageRetentionDays: (value: string) => void;
   setAutoRemoveInvalidAccounts: (value: boolean) => void;
+  setLogLevel: (level: string, enabled: boolean) => void;
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
 
@@ -198,6 +200,16 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setAutoRemoveInvalidAccounts: (value) => {
     set((state) => state.config ? { config: { ...state.config, auto_remove_invalid_accounts: value } } : {});
+  },
+
+  setLogLevel: (level, enabled) => {
+    set((state) => {
+      if (!state.config) return {};
+      const levels = new Set(state.config.log_levels || []);
+      if (enabled) levels.add(level);
+      else levels.delete(level);
+      return { config: { ...state.config, log_levels: Array.from(levels) } };
+    });
   },
 
   setProxy: (value) => {

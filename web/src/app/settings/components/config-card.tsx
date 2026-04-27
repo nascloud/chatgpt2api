@@ -15,12 +15,14 @@ import { useSettingsStore } from "../store";
 export function ConfigCard() {
   const [isTestingProxy, setIsTestingProxy] = useState(false);
   const [proxyTestResult, setProxyTestResult] = useState<ProxyTestResult | null>(null);
+  const logLevelOptions = ["debug", "info", "warning", "error"];
   const config = useSettingsStore((state) => state.config);
   const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
   const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
   const setRefreshAccountIntervalMinute = useSettingsStore((state) => state.setRefreshAccountIntervalMinute);
   const setImageRetentionDays = useSettingsStore((state) => state.setImageRetentionDays);
   const setAutoRemoveInvalidAccounts = useSettingsStore((state) => state.setAutoRemoveInvalidAccounts);
+  const setLogLevel = useSettingsStore((state) => state.setLogLevel);
   const setProxy = useSettingsStore((state) => state.setProxy);
   const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
   const saveConfig = useSettingsStore((state) => state.saveConfig);
@@ -140,6 +142,23 @@ export function ConfigCard() {
             />
             自动移除异常账号
           </label>
+          <div className="space-y-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
+            <div>
+              <label className="text-sm text-stone-700">控制台日志级别</label>
+              <p className="mt-1 text-xs text-stone-500">不选择时使用默认 info / warning / error。</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {logLevelOptions.map((level) => (
+                <label key={level} className="flex items-center gap-2 text-sm capitalize text-stone-700">
+                  <Checkbox
+                    checked={Boolean(config?.log_levels?.includes(level))}
+                    onCheckedChange={(checked) => setLogLevel(level, Boolean(checked))}
+                  />
+                  {level}
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="flex justify-end">

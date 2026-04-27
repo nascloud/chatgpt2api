@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Clock3, LoaderCircle, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,8 @@ import type { ImageConversation, ImageTurnStatus, StoredImage, StoredReferenceIm
 export type ImageLightboxItem = {
   id: string;
   src: string;
+  sizeLabel?: string;
+  dimensions?: string;
 };
 
 type ImageResultsProps = {
@@ -24,6 +27,18 @@ export function ImageResults({
   onContinueEdit,
   formatConversationTime,
 }: ImageResultsProps) {
+  const [imageDimensions, setImageDimensions] = useState<Record<string, string>>({});
+
+  const updateImageDimensions = (id: string, width: number, height: number) => {
+    const dimensions = formatImageDimensions(width, height);
+    setImageDimensions((current) => {
+      if (current[id] === dimensions) {
+        return current;
+      }
+      return { ...current, [id]: dimensions };
+    });
+  };
+
   if (!selectedConversation) {
     return (
       <div className="flex h-full min-h-[420px] items-center justify-center text-center">
@@ -58,7 +73,14 @@ export function ImageResults({
         }));
         const successfulTurnImages = turn.images.flatMap((image) =>
           image.status === "success" && image.b64_json
-            ? [{ id: image.id, src: `data:image/png;base64,${image.b64_json}` }]
+            ? [
+                {
+                  id: image.id,
+                  src: `data:image/png;base64,${image.b64_json}`,
+                  sizeLabel: formatBase64ImageSize(image.b64_json),
+                  dimensions: imageDimensions[image.id],
+                },
+              ]
             : [],
         );
 
@@ -125,6 +147,9 @@ export function ImageResults({
                   {turn.images.map((image, index) => {
                     if (image.status === "success" && image.b64_json) {
                       const currentIndex = successfulTurnImages.findIndex((item) => item.id === image.id);
+                      const sizeLabel = formatBase64ImageSize(image.b64_json);
+                      const dimensions = imageDimensions[image.id];
+                      const imageMeta = [sizeLabel, dimensions].filter(Boolean).join(" · ");
 
                       return (
                         <div
@@ -140,10 +165,20 @@ export function ImageResults({
                               src={`data:image/png;base64,${image.b64_json}`}
                               alt={`Generated result ${index + 1}`}
                               className="block h-auto w-full transition duration-200 group-hover:brightness-90"
+                              onLoad={(event) => {
+                                updateImageDimensions(
+                                  image.id,
+                                  event.currentTarget.naturalWidth,
+                                  event.currentTarget.naturalHeight,
+                                );
+                              }}
                             />
                           </button>
                           <div className="flex items-center justify-between gap-2 px-3 py-3">
-                            <div className="text-xs text-stone-500">结果 {index + 1}</div>
+                            <div className="min-w-0 text-xs text-stone-500">
+                              <span>结果 {index + 1}</span>
+                              {imageMeta ? <span className="ml-2 text-stone-400">{imageMeta}</span> : null}
+                            </div>
                             <Button
                               variant="outline"
                               size="sm"
@@ -232,4 +267,22 @@ function getTurnStatusLabel(status: ImageTurnStatus) {
     return "已完成";
   }
   return "失败";
+}
+
+function formatBase64ImageSize(base64: string) {
+  const normalized = base64.replace(/\s/g, "");
+  const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
+  const bytes = Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${bytes} B`;
+}
+
+function formatImageDimensions(width: number, height: number) {
+  return `${width} x ${height}`;
 }

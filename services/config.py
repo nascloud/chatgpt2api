@@ -118,6 +118,14 @@ class ConfigStore:
         return bool(value)
 
     @property
+    def log_levels(self) -> list[str]:
+        levels = self.data.get("log_levels")
+        if not isinstance(levels, list):
+            return []
+        allowed = {"debug", "info", "warning", "error"}
+        return [level for item in levels if (level := str(item or "").strip().lower()) in allowed]
+
+    @property
     def images_dir(self) -> Path:
         path = DATA_DIR / "images"
         path.mkdir(parents=True, exist_ok=True)
@@ -158,6 +166,7 @@ class ConfigStore:
         data["refresh_account_interval_minute"] = self.refresh_account_interval_minute
         data["image_retention_days"] = self.image_retention_days
         data["auto_remove_invalid_accounts"] = self.auto_remove_invalid_accounts
+        data["log_levels"] = self.log_levels
         data.pop("auth-key", None)
         return data
 

@@ -53,6 +53,7 @@ function LogsContent() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [detailLog, setDetailLog] = useState<SystemLog | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -81,6 +82,11 @@ function LogsContent() {
   const clearFilters = () => {
     setStartDate("");
     setEndDate("");
+  };
+
+  const openDetail = (item: SystemLog) => {
+    setDetailLog(item);
+    setDetailOpen(true);
   };
 
   useEffect(() => {
@@ -151,7 +157,7 @@ function LogsContent() {
                     ) : null}
                     <TableCell className="max-w-[420px] truncate text-stone-500">{item.summary || "-"}</TableCell>
                     <TableCell>
-                      <Button variant="ghost" className="h-8 rounded-lg px-3 text-stone-600" onClick={() => setDetailLog(item)}>
+                      <Button variant="ghost" className="h-8 rounded-lg px-3 text-stone-600" onClick={() => openDetail(item)}>
                         查看详情
                       </Button>
                     </TableCell>
@@ -172,7 +178,7 @@ function LogsContent() {
           {!isLoading && items.length === 0 ? <div className="px-6 py-14 text-center text-sm text-stone-500">没有找到日志</div> : null}
         </CardContent>
       </Card>
-      <Dialog open={Boolean(detailLog)} onOpenChange={(open) => (!open ? setDetailLog(null) : null)}>
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="w-[min(92vw,920px)] rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle>日志详情</DialogTitle>

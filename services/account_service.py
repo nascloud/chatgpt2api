@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import base64
 import hashlib
 import json
-from pathlib import Path
 from threading import Lock
 from typing import Any
 from datetime import datetime
@@ -252,8 +251,7 @@ class AccountService:
             message = str(exc)
             print(f"[account-available] refresh token={token_ref} fail {message}")
             if "/backend-api/me failed: HTTP 401" in message:
-                if config.auto_remove_invalid_accounts and self.remove_token(access_token):
-                    log_service.add(LOG_TYPE_ACCOUNT, "自动移除异常账号", {"source": "refresh_account_state", "token": token_ref})
+                if self.remove_invalid_token(access_token, "refresh_account_state"):
                     return None
                 return self.update_account(
                     access_token,
@@ -279,6 +277,22 @@ class AccountService:
                 f"quota={account.get('quota') if account else 'unknown'} "
                 f"status={account.get('status') if account else 'unknown'}"
             )
+
+    def get_text_access_token(self) -> str:
+        with self._lock:
+            for account in self._accounts:
+                status = self._clean_token(account.get("status"))
+                if status not in {"禁用", "异常"}:
+                    return self._clean_token(account.get("access_token"))
+        return ""
+
+    def remove_invalid_token(self, access_token: str, event: str) -> bool:
+        if not config.auto_remove_invalid_accounts:
+            return False
+        removed = self.remove_token(access_token)
+        if removed:
+            log_service.add(LOG_TYPE_ACCOUNT, "自动移除异常账号", {"source": event, "token": anonymize_token(access_token)})
+        return removed
 
     def next_token(self) -> str:
         return self.get_available_access_token()
@@ -505,9 +519,7 @@ class AccountService:
                     message = str(exc)
                     print(f"[account-refresh] fail {anonymize_token(access_token)} {message}")
                     if "/backend-api/me failed: HTTP 401" in message:
-                        if config.auto_remove_invalid_accounts and self.remove_token(access_token):
-                            log_service.add(LOG_TYPE_ACCOUNT, "自动移除异常账号", {"source": "refresh_accounts", "token": anonymize_token(access_token)})
-                        else:
+                        if not self.remove_invalid_token(access_token, "refresh_accounts"):
                             self.update_account(access_token, {"status": "异常", "quota": 0})
                         message = "检测到封号"
                     errors.append({"access_token": access_token, "error": message})

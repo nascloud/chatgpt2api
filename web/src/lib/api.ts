@@ -2,7 +2,7 @@ import { httpRequest } from "@/lib/request";
 
 export type AccountType = "Free" | "Plus" | "ProLite" | "Pro" | "Team";
 export type AccountStatus = "正常" | "限流" | "异常" | "禁用";
-export type ImageModel = "auto" | "gpt-image-1" | "gpt-image-2";
+export type ImageModel = "gpt-image-2" | "codex-gpt-image-2";
 export type AuthRole = "admin" | "user";
 
 export type Account = {
@@ -56,6 +56,7 @@ export type SettingsConfig = {
   refresh_account_interval_minute?: number | string;
   image_retention_days?: number | string;
   auto_remove_invalid_accounts?: boolean;
+  log_levels?: string[];
   [key: string]: unknown;
 };
 
@@ -73,6 +74,11 @@ export type SystemLog = {
   summary?: string;
   detail?: Record<string, unknown>;
   [key: string]: unknown;
+};
+
+export type ImageResponse = {
+  created: number;
+  data: Array<{ b64_json: string; revised_prompt?: string }>;
 };
 
 export type LoginResponse = {
@@ -147,7 +153,7 @@ export async function updateAccount(
 }
 
 export async function generateImage(prompt: string, model?: ImageModel, size?: string) {
-  return httpRequest<{ created: number; data: Array<{ b64_json: string; revised_prompt?: string }> }>(
+  return httpRequest<ImageResponse>(
     "/v1/images/generations",
     {
       method: "POST",
@@ -178,7 +184,7 @@ export async function editImage(files: File | File[], prompt: string, model?: Im
   }
   formData.append("n", "1");
 
-  return httpRequest<{ created: number; data: Array<{ b64_json: string; revised_prompt?: string }> }>(
+  return httpRequest<ImageResponse>(
     "/v1/images/edits",
     {
       method: "POST",

@@ -120,7 +120,7 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
   return {
     id: String(turn.id || `${Date.now()}`),
     prompt: String(turn.prompt || ""),
-    model: (turn.model as ImageModel) || "auto",
+    model: (turn.model as ImageModel) || "gpt-image-2",
     mode: turn.mode === "edit" ? "edit" : "generate",
     referenceImages: getLegacyReferenceImages(turn),
     count: Math.max(1, Number(turn.count || normalizedImages.length || 1)),
@@ -145,7 +145,7 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
         normalizeTurn({
           id: String(conversation.id || `${Date.now()}`),
           prompt: String(conversation.prompt || ""),
-          model: (conversation.model as ImageModel) || "auto",
+          model: (conversation.model as ImageModel) || "gpt-image-2",
           mode: conversation.mode === "edit" ? "edit" : "generate",
           referenceImages: getLegacyReferenceImages(conversation),
           count: Number(conversation.count || 1),
@@ -174,6 +174,15 @@ function sortImageConversations(conversations: ImageConversation[]): ImageConver
   return [...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+function getTimestamp(value: string) {
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function pickLatestConversation(current: ImageConversation, next: ImageConversation) {
+  return getTimestamp(next.updatedAt) >= getTimestamp(current.updatedAt) ? next : current;
+}
+
 function queueImageConversationWrite<T>(operation: () => Promise<T>): Promise<T> {
   const result = imageConversationWriteQueue.then(operation);
   imageConversationWriteQueue = result.then(
@@ -185,8 +194,9 @@ function queueImageConversationWrite<T>(operation: () => Promise<T>): Promise<T>
 
 async function readStoredImageConversations(): Promise<ImageConversation[]> {
   const items =
-    (await imageConversationStorage.getItem<Array<ImageConversation & Record<string, unknown>>>(IMAGE_CONVERSATIONS_KEY)) ||
-    [];
+    (await imageConversationStorage.getItem<Array<ImageConversation & Record<string, unknown>>>(
+      IMAGE_CONVERSATIONS_KEY,
+    )) || [];
   return items.map(normalizeConversation);
 }
 
@@ -196,17 +206,28 @@ export async function listImageConversations(): Promise<ImageConversation[]> {
 
 export async function saveImageConversations(conversations: ImageConversation[]): Promise<void> {
   await queueImageConversationWrite(async () => {
-    const normalizedItems = sortImageConversations(conversations.map(normalizeConversation));
-    await imageConversationStorage.setItem(IMAGE_CONVERSATIONS_KEY, normalizedItems);
+    const items = await readStoredImageConversations();
+    const conversationMap = new Map(items.map((item) => [item.id, item]));
+    for (const conversation of conversations.map(normalizeConversation)) {
+      const current = conversationMap.get(conversation.id);
+      conversationMap.set(conversation.id, current ? pickLatestConversation(current, conversation) : conversation);
+    }
+    await imageConversationStorage.setItem(
+      IMAGE_CONVERSATIONS_KEY,
+      sortImageConversations([...conversationMap.values()]),
+    );
   });
 }
 
 export async function saveImageConversation(conversation: ImageConversation): Promise<void> {
   await queueImageConversationWrite(async () => {
     const items = await readStoredImageConversations();
+    const nextConversation = normalizeConversation(conversation);
+    const current = items.find((item) => item.id === nextConversation.id);
+    const persistedConversation = current ? pickLatestConversation(current, nextConversation) : nextConversation;
     const nextItems = sortImageConversations([
-      normalizeConversation(conversation),
-      ...items.filter((item) => item.id !== conversation.id),
+      persistedConversation,
+      ...items.filter((item) => item.id !== persistedConversation.id),
     ]);
     await imageConversationStorage.setItem(IMAGE_CONVERSATIONS_KEY, nextItems);
   });
