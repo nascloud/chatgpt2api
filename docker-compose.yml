@@ -7,7 +7,7 @@ services:
       - "3000:80"
     volumes:
       - ./data:/app/data
-      - ./config.json:/app/config.json:ro
+      - ./config.json:/app/config.json
     environment:
       # 存储后端配置 (可选值: json, sqlite, postgres, git)
        - STORAGE_BACKEND=json
