@@ -17,7 +17,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { editImage, fetchAccounts, generateImage, type Account } from "@/lib/api";
+import {
+  createImageEditTask,
+  createImageGenerationTask,
+  fetchAccounts,
+  fetchImageTasks,
+  type Account,
+  type ImageTask,
+} from "@/lib/api";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import {
   clearImageConversations,
@@ -103,6 +110,81 @@ function buildReferenceImageFromResult(image: StoredImage, fileName: string): St
   };
 }
 
+async function fetchImageAsFile(url: string, fileName: string) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error("读取结果图失败");
+  }
+  const blob = await response.blob();
+  return new File([blob], fileName, { type: blob.type || "image/png" });
+}
+
+async function buildReferenceImageFromStoredImage(image: StoredImage, fileName: string) {
+  const direct = buildReferenceImageFromResult(image, fileName);
+  if (direct) {
+    return {
+      referenceImage: direct,
+      file: dataUrlToFile(direct.dataUrl, direct.name, direct.type),
+    };
+  }
+
+  if (!image.url) {
+    return null;
+  }
+  const file = await fetchImageAsFile(image.url, fileName);
+  return {
+    referenceImage: {
+      name: file.name,
+      type: file.type || "image/png",
+      dataUrl: await readFileAsDataUrl(file),
+    },
+    file,
+  };
+}
+
+function taskDataToStoredImage(image: StoredImage, task: ImageTask): StoredImage {
+  if (task.status === "success") {
+    const first = task.data?.[0];
+    if (!first?.b64_json && !first?.url) {
+      return {
+        ...image,
+        taskId: task.id,
+        status: "error",
+        error: "未返回图片数据",
+      };
+    }
+    return {
+      ...image,
+      taskId: task.id,
+      status: "success",
+      b64_json: first.b64_json,
+      url: first.url,
+      revised_prompt: first.revised_prompt,
+      error: undefined,
+    };
+  }
+
+  if (task.status === "error") {
+    return {
+      ...image,
+      taskId: task.id,
+      status: "error",
+      error: task.error || "生成失败",
+    };
+  }
+
+  return {
+    ...image,
+    taskId: task.id,
+    status: "loading",
+    error: undefined,
+  };
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 function pickFallbackConversationId(conversations: ImageConversation[]) {
   const activeConversation = conversations.find((conversation) =>
     conversation.turns.some((turn) => turn.status === "queued" || turn.status === "generating"),
@@ -114,65 +196,138 @@ function sortImageConversations(conversations: ImageConversation[]) {
   return [...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-async function recoverConversationHistory(items: ImageConversation[]) {
-  const normalized = items.map((conversation) => {
-    let changed = false;
+function deriveTurnStatus(turn: ImageTurn): Pick<ImageTurn, "status" | "error"> {
+  const loadingCount = turn.images.filter((image) => image.status === "loading").length;
+  const failedCount = turn.images.filter((image) => image.status === "error").length;
+  const successCount = turn.images.filter((image) => image.status === "success").length;
+  if (loadingCount > 0) {
+    return { status: turn.status === "queued" ? "queued" : "generating", error: undefined };
+  }
+  if (failedCount > 0) {
+    return { status: "error", error: `其中 ${failedCount} 张未成功生成` };
+  }
+  if (successCount > 0) {
+    return { status: "success", error: undefined };
+  }
+  return { status: "queued", error: undefined };
+}
 
+async function syncConversationImageTasks(items: ImageConversation[]) {
+  const taskIds = Array.from(
+    new Set(
+      items.flatMap((conversation) =>
+        conversation.turns.flatMap((turn) =>
+          turn.images.flatMap((image) => (image.status === "loading" && image.taskId ? [image.taskId] : [])),
+        ),
+      ),
+    ),
+  );
+  if (taskIds.length === 0) {
+    return items;
+  }
+
+  let taskList: Awaited<ReturnType<typeof fetchImageTasks>>;
+  try {
+    taskList = await fetchImageTasks(taskIds);
+  } catch {
+    return items;
+  }
+  const taskMap = new Map(taskList.items.map((task) => [task.id, task]));
+  let changed = false;
+  const normalized = items.map((conversation) => {
+    const turns = conversation.turns.map((turn) => {
+      let turnChanged = false;
+      const images = turn.images.map((image) => {
+        if (image.status !== "loading" || !image.taskId) {
+          return image;
+        }
+        const task = taskMap.get(image.taskId);
+        if (!task) {
+          return image;
+        }
+        const nextImage = taskDataToStoredImage(image, task);
+        if (nextImage !== image) {
+          turnChanged = true;
+        }
+        return nextImage;
+      });
+      if (!turnChanged) {
+        return turn;
+      }
+      changed = true;
+      const derived = deriveTurnStatus({ ...turn, images });
+      return {
+        ...turn,
+        ...derived,
+        images,
+      };
+    });
+    if (turns === conversation.turns || !turns.some((turn, index) => turn !== conversation.turns[index])) {
+      return conversation;
+    }
+    return {
+      ...conversation,
+      turns,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  if (changed) {
+    await saveImageConversations(normalized);
+  }
+  return normalized;
+}
+
+async function recoverConversationHistory(items: ImageConversation[]) {
+  let changed = false;
+  const normalized = items.map((conversation) => {
     const turns = conversation.turns.map((turn) => {
       if (turn.status !== "queued" && turn.status !== "generating") {
         return turn;
       }
 
-      const loadingCount = turn.images.filter((image) => image.status === "loading").length;
-      if (loadingCount > 0) {
-        const message = "页面刷新或任务中断，未完成的图片已标记为失败";
-        changed = true;
+      let turnChanged = false;
+      const images = turn.images.map((image) => {
+        if (image.status !== "loading" || image.taskId) {
+          return image;
+        }
+        turnChanged = true;
         return {
-          ...turn,
+          ...image,
           status: "error" as const,
-          error: message,
-          images: turn.images.map((image) =>
-            image.status === "loading" ? { ...image, status: "error" as const, error: message } : image,
-          ),
+          error: "页面刷新或任务中断，未找到可恢复的任务 ID",
         };
-      }
-
-      const failedCount = turn.images.filter((image) => image.status === "error").length;
-      const successCount = turn.images.filter((image) => image.status === "success").length;
-      const nextStatus: ImageTurnStatus =
-        failedCount > 0 ? "error" : successCount > 0 ? "success" : "queued";
-      const nextError = failedCount > 0 ? turn.error || `其中 ${failedCount} 张未成功生成` : undefined;
-      if (nextStatus === turn.status && nextError === turn.error) {
+      });
+      const derived = deriveTurnStatus({ ...turn, images });
+      if (!turnChanged && derived.status === turn.status && derived.error === turn.error) {
         return turn;
       }
-
       changed = true;
       return {
         ...turn,
-        status: nextStatus,
-        error: nextError,
+        ...derived,
+        images,
       };
     });
 
-    if (!changed) {
+    if (!turns.some((turn, index) => turn !== conversation.turns[index])) {
       return conversation;
     }
 
-    const lastTurn = turns.length > 0 ? turns[turns.length - 1] : null;
     return {
       ...conversation,
       turns,
-      updatedAt: lastTurn?.createdAt || conversation.updatedAt,
+      updatedAt: new Date().toISOString(),
     };
   });
 
-  const changedConversations = normalized.filter((conversation, index) => conversation !== items[index]);
-  if (changedConversations.length > 0) {
+  if (changed) {
     await saveImageConversations(normalized);
   }
 
-  return normalized;
+  return syncConversationImageTasks(normalized);
 }
+
 
 function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const didLoadQuotaRef = useRef(false);
@@ -490,25 +645,30 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   }, []);
 
   const handleContinueEdit = useCallback(
-    (conversationId: string, image: StoredImage | StoredReferenceImage) => {
-      const nextReferenceImage =
-        "dataUrl" in image
-          ? image
-          : buildReferenceImageFromResult(image, `conversation-${conversationId}-${Date.now()}.png`);
-      if (!nextReferenceImage) {
-        return;
-      }
+    async (conversationId: string, image: StoredImage | StoredReferenceImage) => {
+      try {
+        const nextReference =
+          "dataUrl" in image
+            ? {
+                referenceImage: image,
+                file: dataUrlToFile(image.dataUrl, image.name, image.type),
+              }
+            : await buildReferenceImageFromStoredImage(image, `conversation-${conversationId}-${Date.now()}.png`);
+        if (!nextReference) {
+          return;
+        }
 
-      setSelectedConversationId(conversationId);
-      setImageMode("edit");
-      setReferenceImages((prev) => [...prev, nextReferenceImage]);
-      setReferenceImageFiles((prev) => [
-        ...prev,
-        dataUrlToFile(nextReferenceImage.dataUrl, nextReferenceImage.name, nextReferenceImage.type),
-      ]);
-      setImagePrompt("");
-      textareaRef.current?.focus();
-      toast.success("已加入当前参考图，继续输入描述即可编辑");
+        setSelectedConversationId(conversationId);
+        setImageMode("edit");
+        setReferenceImages((prev) => [...prev, nextReference.referenceImage]);
+        setReferenceImageFiles((prev) => [...prev, nextReference.file]);
+        setImagePrompt("");
+        textareaRef.current?.focus();
+        toast.success("已加入当前参考图，继续输入描述即可编辑");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "读取结果图失败";
+        toast.error(message);
+      }
     },
     [],
   );
@@ -531,157 +691,115 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       }
 
       const snapshot = conversationsRef.current.find((conversation) => conversation.id === conversationId);
-      const queuedTurn = snapshot?.turns.find((turn) => turn.status === "queued");
-      if (!snapshot || !queuedTurn) {
+      const activeTurn = snapshot?.turns.find(
+        (turn) =>
+          (turn.status === "queued" || turn.status === "generating") &&
+          turn.images.some((image) => image.status === "loading"),
+      );
+      if (!snapshot || !activeTurn) {
         return;
       }
 
       activeConversationQueueIds.add(conversationId);
-      await updateConversation(conversationId, (current) => {
-        const conversation = current ?? snapshot;
-        return {
-          ...conversation,
-          updatedAt: new Date().toISOString(),
-          turns: conversation.turns.map((turn) =>
-            turn.id === queuedTurn.id
-              ? {
-                  ...turn,
-                  status: "generating",
-                  error: undefined,
-                }
-              : turn,
-          ),
-        };
-      });
-
-      try {
-        const referenceFiles = queuedTurn.referenceImages.map((image, index) =>
-          dataUrlToFile(image.dataUrl, image.name || `${queuedTurn.id}-${index + 1}.png`, image.type),
-        );
-        const pendingImages = queuedTurn.images.filter((image) => image.status === "loading");
-
-        if (queuedTurn.mode === "edit" && referenceFiles.length === 0) {
-          throw new Error("未找到可用于继续编辑的参考图");
-        }
-
-        if (pendingImages.length === 0) {
-          const existingFailedCount = queuedTurn.images.filter((image) => image.status === "error").length;
-          const existingSuccessCount = queuedTurn.images.filter((image) => image.status === "success").length;
-          await updateConversation(conversationId, (current) => {
-            const conversation = current ?? snapshot;
+      const applyTasks = async (tasks: ImageTask[]) => {
+        const taskMap = new Map(tasks.map((task) => [task.id, task]));
+        await updateConversation(conversationId, (current) => {
+          const conversation = current ?? snapshot;
+          const turns = conversation.turns.map((turn) => {
+            if (turn.id !== activeTurn.id) {
+              return turn;
+            }
+            const images = turn.images.map((image) => {
+              const taskId = image.taskId || image.id;
+              const task = taskMap.get(taskId);
+              return task ? taskDataToStoredImage({ ...image, taskId }, task) : image;
+            });
+            const derived = deriveTurnStatus({ ...turn, status: "generating", images });
             return {
-              ...conversation,
-              updatedAt: new Date().toISOString(),
-              turns: conversation.turns.map((turn) =>
-                turn.id === queuedTurn.id
-                  ? {
-                      ...turn,
-                      status: existingFailedCount > 0 ? "error" : existingSuccessCount > 0 ? "success" : "queued",
-                      error: existingFailedCount > 0 ? `其中 ${existingFailedCount} 张未成功生成` : undefined,
-                    }
-                  : turn,
-              ),
+              ...turn,
+              ...derived,
+              images,
             };
           });
-          return;
-        }
-
-        const tasks = pendingImages.map(async (pendingImage) => {
-          try {
-            const data =
-              queuedTurn.mode === "edit"
-                ? await editImage(referenceFiles, queuedTurn.prompt, queuedTurn.model, queuedTurn.size)
-                : await generateImage(queuedTurn.prompt, queuedTurn.model, queuedTurn.size);
-            const first = data.data?.[0];
-            if (!first?.b64_json) {
-              throw new Error("未返回图片数据");
-            }
-
-            const nextImage: StoredImage = {
-              id: pendingImage.id,
-              status: "success",
-              b64_json: first.b64_json,
-            };
-
-            await updateConversation(
-              conversationId,
-              (current) => {
-                const conversation = current ?? snapshot;
-                return {
-                  ...conversation,
-                  updatedAt: new Date().toISOString(),
-                  turns: conversation.turns.map((turn) =>
-                    turn.id === queuedTurn.id
-                      ? {
-                          ...turn,
-                          images: turn.images.map((image) => (image.id === nextImage.id ? nextImage : image)),
-                        }
-                      : turn,
-                  ),
-                };
-              },
-              { persist: false },
-            );
-
-            return nextImage;
-          } catch (error) {
-            const message = error instanceof Error ? error.message : "生成失败";
-            const failedImage: StoredImage = {
-              id: pendingImage.id,
-              status: "error",
-              error: message,
-            };
-
-            await updateConversation(
-              conversationId,
-              (current) => {
-                const conversation = current ?? snapshot;
-                return {
-                  ...conversation,
-                  updatedAt: new Date().toISOString(),
-                  turns: conversation.turns.map((turn) =>
-                    turn.id === queuedTurn.id
-                      ? {
-                          ...turn,
-                          images: turn.images.map((image) => (image.id === failedImage.id ? failedImage : image)),
-                        }
-                      : turn,
-                  ),
-                };
-              },
-              { persist: false },
-            );
-
-            throw error;
-          }
+          return {
+            ...conversation,
+            updatedAt: new Date().toISOString(),
+            turns,
+          };
         });
+      };
 
-        const settled = await Promise.allSettled(tasks);
-        const resumedSuccessCount = settled.filter(
-          (item): item is PromiseFulfilledResult<StoredImage> => item.status === "fulfilled",
-        ).length;
-        const resumedFailedCount = settled.length - resumedSuccessCount;
-        const existingSuccessCount = queuedTurn.images.filter((image) => image.status === "success").length;
-        const existingFailedCount = queuedTurn.images.filter((image) => image.status === "error").length;
-        const successCount = existingSuccessCount + resumedSuccessCount;
-        const failedCount = existingFailedCount + resumedFailedCount;
-
+      try {
         await updateConversation(conversationId, (current) => {
           const conversation = current ?? snapshot;
           return {
             ...conversation,
             updatedAt: new Date().toISOString(),
             turns: conversation.turns.map((turn) =>
-              turn.id === queuedTurn.id
+              turn.id === activeTurn.id
                 ? {
                     ...turn,
-                    status: failedCount > 0 ? "error" : "success",
-                    error: failedCount > 0 ? `其中 ${failedCount} 张未成功生成` : undefined,
+                    status: "generating",
+                    error: undefined,
+                    images: turn.images.map((image) =>
+                      image.status === "loading" ? { ...image, taskId: image.taskId || image.id } : image,
+                    ),
                   }
                 : turn,
             ),
           };
         });
+
+        const referenceFiles = activeTurn.referenceImages.map((image, index) =>
+          dataUrlToFile(image.dataUrl, image.name || `${activeTurn.id}-${index + 1}.png`, image.type),
+        );
+        if (activeTurn.mode === "edit" && referenceFiles.length === 0) {
+          throw new Error("未找到可用于继续编辑的参考图");
+        }
+
+        const pendingImages = activeTurn.images.filter((image) => image.status === "loading");
+        const submitted = await Promise.all(
+          pendingImages.map((image) => {
+            const taskId = image.taskId || image.id;
+            return activeTurn.mode === "edit"
+              ? createImageEditTask(taskId, referenceFiles, activeTurn.prompt, activeTurn.model, activeTurn.size)
+              : createImageGenerationTask(taskId, activeTurn.prompt, activeTurn.model, activeTurn.size);
+          }),
+        );
+        await applyTasks(submitted);
+
+        while (true) {
+          const latestConversation = conversationsRef.current.find((conversation) => conversation.id === conversationId);
+          const latestTurn = latestConversation?.turns.find((turn) => turn.id === activeTurn.id);
+          const loadingTaskIds =
+            latestTurn?.images.flatMap((image) =>
+              image.status === "loading" && image.taskId ? [image.taskId] : [],
+            ) || [];
+          if (loadingTaskIds.length === 0) {
+            break;
+          }
+
+          await sleep(2000);
+          const taskList = await fetchImageTasks(loadingTaskIds);
+          if (taskList.items.length > 0) {
+            await applyTasks(taskList.items);
+          }
+          if (taskList.missing_ids.length > 0 && latestTurn) {
+            const missingImages = latestTurn.images.filter(
+              (image) => image.status === "loading" && image.taskId && taskList.missing_ids.includes(image.taskId),
+            );
+            const resubmitted = await Promise.all(
+              missingImages.map((image) =>
+                activeTurn.mode === "edit"
+                  ? createImageEditTask(image.taskId || image.id, referenceFiles, activeTurn.prompt, activeTurn.model, activeTurn.size)
+                  : createImageGenerationTask(image.taskId || image.id, activeTurn.prompt, activeTurn.model, activeTurn.size),
+              ),
+            );
+            if (resubmitted.length > 0) {
+              await applyTasks(resubmitted);
+            }
+          }
+        }
 
         await loadQuota();
       } catch (error) {
@@ -692,7 +810,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             ...conversation,
             updatedAt: new Date().toISOString(),
             turns: conversation.turns.map((turn) =>
-              turn.id === queuedTurn.id
+              turn.id === activeTurn.id
                 ? {
                     ...turn,
                     status: "error",
@@ -711,7 +829,11 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         for (const conversation of conversationsRef.current) {
           if (
             !activeConversationQueueIds.has(conversation.id) &&
-            conversation.turns.some((turn) => turn.status === "queued")
+            conversation.turns.some(
+              (turn) =>
+                (turn.status === "queued" || turn.status === "generating") &&
+                turn.images.some((image) => image.status === "loading"),
+            )
           ) {
             void runConversationQueue(conversation.id);
           }
@@ -726,7 +848,11 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     for (const conversation of conversations) {
       if (
         !activeConversationQueueIds.has(conversation.id) &&
-        conversation.turns.some((turn) => turn.status === "queued")
+        conversation.turns.some(
+          (turn) =>
+            (turn.status === "queued" || turn.status === "generating") &&
+            turn.images.some((image) => image.status === "loading"),
+        )
       ) {
         void runConversationQueue(conversation.id);
       }
@@ -759,10 +885,14 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       referenceImages: imageMode === "edit" ? referenceImages : [],
       count: parsedCount,
       size: imageSize,
-      images: Array.from({ length: parsedCount }, (_, index) => ({
-        id: `${turnId}-${index}`,
-        status: "loading" as const,
-      })),
+      images: Array.from({ length: parsedCount }, (_, index) => {
+        const imageId = `${turnId}-${index}`;
+        return {
+          id: imageId,
+          taskId: imageId,
+          status: "loading" as const,
+        };
+      }),
       createdAt: now,
       status: "queued",
     };
