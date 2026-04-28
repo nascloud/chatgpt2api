@@ -338,7 +338,6 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageCount, setImageCount] = useState("1");
-  const [imageMode, setImageMode] = useState<ImageConversationMode>("generate");
   const [imageSize, setImageSize] = useState("");
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [referenceImageFiles, setReferenceImageFiles] = useState<File[]>([]);
@@ -529,7 +528,6 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   }, []);
 
   const resetComposer = useCallback(() => {
-    setImageMode("generate");
     clearComposerInputs();
   }, [clearComposerInputs]);
 
@@ -612,7 +610,6 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
       setReferenceImageFiles((prev) => [...prev, ...files]);
       setReferenceImages((prev) => [...prev, ...previews]);
-      setImageMode("edit");
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -659,7 +656,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         }
 
         setSelectedConversationId(conversationId);
-        setImageMode("edit");
+
         setReferenceImages((prev) => [...prev, nextReference.referenceImage]);
         setReferenceImageFiles((prev) => [...prev, nextReference.file]);
         setImagePrompt("");
@@ -866,10 +863,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       return;
     }
 
-    if (imageMode === "edit" && referenceImageFiles.length === 0) {
-      toast.error("请先上传参考图");
-      return;
-    }
+    const effectiveImageMode: ImageConversationMode = referenceImageFiles.length > 0 ? "edit" : "generate";
 
     const targetConversation = selectedConversationId
       ? conversationsRef.current.find((conversation) => conversation.id === selectedConversationId) ?? null
@@ -881,8 +875,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       id: turnId,
       prompt,
       model: "gpt-image-2",
-      mode: imageMode,
-      referenceImages: imageMode === "edit" ? referenceImages : [],
+      mode: effectiveImageMode,
+      referenceImages: effectiveImageMode === "edit" ? referenceImages : [],
       count: parsedCount,
       size: imageSize,
       images: Array.from({ length: parsedCount }, (_, index) => {
@@ -929,7 +923,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <>
-      <section className="mx-auto grid h-[calc(100vh-5rem)] min-h-0 w-full max-w-[1380px] grid-cols-1 gap-3 px-3 pb-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+      <section className="mx-auto grid h-[calc(100dvh-6.25rem)] min-h-0 w-full max-w-[1380px] grid-cols-1 gap-2 px-0 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:h-[calc(100dvh-5rem)] sm:gap-3 sm:px-3 sm:pb-6 lg:grid-cols-[240px_minmax(0,1fr)]">
         <div className="hidden h-full min-h-0 border-r border-stone-200/70 pr-3 lg:block">
           <ImageSidebar
             conversations={conversations}
@@ -944,14 +938,14 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         </div>
 
         <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
-          <DialogContent className="flex h-[80vh] w-[92vw] max-w-[420px] flex-col overflow-hidden rounded-[32px] border-stone-200 bg-white p-0 shadow-2xl">
-            <DialogHeader className="px-6 pt-6 pb-2">
-              <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+          <DialogContent className="flex h-[min(82dvh,760px)] w-[92vw] max-w-[460px] flex-col overflow-hidden rounded-[32px] border-white/80 bg-white p-0 shadow-[0_32px_110px_-38px_rgba(15,23,42,0.45)] sm:rounded-[36px]">
+            <DialogHeader className="px-6 pt-7 pb-4 sm:px-8">
+              <DialogTitle className="flex items-center gap-2 text-xl font-bold tracking-tight">
                 <History className="size-5" />
                 历史记录
               </DialogTitle>
             </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 sm:px-8">
               <ImageSidebar
                 conversations={conversations}
                 isLoadingHistory={isLoadingHistory}
@@ -973,11 +967,11 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
           </DialogContent>
         </Dialog>
 
-        <div className="flex min-h-0 flex-col gap-3 sm:gap-4">
-          <div className="flex items-center justify-between gap-3 lg:hidden">
+        <div className="flex min-h-0 flex-col gap-2 sm:gap-4">
+          <div className="flex items-center justify-between gap-2 px-1 lg:hidden">
             <Button
               variant="outline"
-              className="h-10 flex-1 rounded-2xl border-stone-200 bg-white/85 text-stone-700 shadow-sm"
+              className="h-10 flex-1 rounded-2xl border-stone-200 bg-white/90 text-stone-700 shadow-sm"
               onClick={() => setIsHistoryOpen(true)}
             >
               <History className="mr-2 size-4" />
@@ -1002,7 +996,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
           <div
             ref={resultsViewportRef}
-            className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-3 sm:px-4 sm:py-4"
+            className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-1 py-2 sm:px-4 sm:py-4"
           >
             <ImageResults
               selectedConversation={selectedConversation}
@@ -1013,7 +1007,6 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
           </div>
 
           <ImageComposer
-            mode={imageMode}
             prompt={imagePrompt}
             imageCount={imageCount}
             imageSize={imageSize}
@@ -1022,7 +1015,6 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             referenceImages={referenceImages}
             textareaRef={textareaRef}
             fileInputRef={fileInputRef}
-            onModeChange={setImageMode}
             onPromptChange={setImagePrompt}
             onImageCountChange={setImageCount}
             onImageSizeChange={setImageSize}
