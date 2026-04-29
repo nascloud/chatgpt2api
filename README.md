@@ -29,6 +29,16 @@ git clone git@github.com:basketikun/chatgpt2api.git
 # 按需编辑 config.json 的密钥和 `refresh_account_interval_minute`
 # 也可以直接通过环境变量 CHATGPT2API_AUTH_KEY 覆盖 auth-key
 docker compose up -d
+
+#或者本地开发(为linux语句,windows自己找ai转，没有uv也可以pip但是他这里有uv.lock所以用了uv)
+git clone https://github.com/Lambda-zhou/chatgpt2api
+cd chatgpt2api
+uv venv .venv
+source .venv/bin/activate
+uv sync
+cd web && npm install && npm run build
+cp -r web/out web_dist
+cd .. && uv run main.py（打开8000端口访问服务）
 ```
 
 ### 存储后端配置
