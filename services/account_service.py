@@ -284,7 +284,7 @@ class AccountService:
             candidates = [
                 token
                 for account in self._accounts
-                if self._clean_token(account.get("status")) not in {"禁用", "异常", "限流"}
+                if self._clean_token(account.get("status")) not in {"禁用", "异常"}
                    and (token := self._clean_token(account.get("access_token")))
                    and token not in excluded
             ]
