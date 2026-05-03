@@ -120,9 +120,9 @@ class ConfigStore:
     @property
     def image_account_concurrency(self) -> int:
         try:
-            return max(1, int(self.data.get("image_account_concurrency", 1)))
+            return max(1, int(self.data.get("image_account_concurrency", 3)))
         except (TypeError, ValueError):
-            return 1
+            return 3
 
     @property
     def auto_remove_invalid_accounts(self) -> bool:
