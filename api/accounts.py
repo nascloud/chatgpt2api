@@ -102,7 +102,10 @@ def create_router() -> APIRouter:
     @router.post("/api/auth/users")
     async def create_user_key(body: UserKeyCreateRequest, authorization: str | None = Header(default=None)):
         require_admin(authorization)
-        item, raw_key = auth_service.create_key(role="user", name=body.name)
+        try:
+            item, raw_key = auth_service.create_key(role="user", name=body.name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
         return {"item": item, "key": raw_key, "items": auth_service.list_keys(role="user")}
 
     @router.post("/api/auth/users/{key_id}")
