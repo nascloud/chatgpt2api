@@ -428,6 +428,13 @@ class BackupService:
         finally:
             client.close()
         name = candidate.rsplit("/", 1)[-1] or "backup.bin"
+        if candidate.endswith(".enc"):
+            passphrase = _clean(config.get_backup_settings().get("passphrase"))
+            if not passphrase:
+                raise BackupError("当前未配置加密口令，无法下载并解密已加密备份")
+            payload = _openssl_decrypt(payload, passphrase)
+            if name.endswith(".enc"):
+                name = name[:-4] or "backup.tar.gz"
         return {
             "key": candidate,
             "name": name,
