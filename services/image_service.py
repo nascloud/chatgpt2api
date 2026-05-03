@@ -45,7 +45,7 @@ def _safe_image_path(relative_path: str) -> Path:
 
 def _thumbnail_path(relative_path: str) -> Path:
     rel = _safe_relative_path(relative_path)
-    return config.image_thumbnails_dir / rel
+    return config.image_thumbnails_dir / f"{rel}.png"
 
 
 def thumbnail_url(base_url: str, relative_path: str) -> str:
@@ -93,8 +93,8 @@ def cleanup_image_thumbnails() -> int:
     for path in thumbnails_root.rglob("*"):
         if not path.is_file():
             continue
-        rel = path.relative_to(thumbnails_root)
-        if not (images_root / rel).exists():
+        rel = path.relative_to(thumbnails_root).as_posix()
+        if not rel.endswith(".png") or not (images_root / rel[:-4]).exists():
             path.unlink()
             removed += 1
     _cleanup_empty_dirs(thumbnails_root)
@@ -156,9 +156,9 @@ def delete_images(paths: list[str] | None = None, start_date: str = "", end_date
             continue
         if path.is_file():
             path.unlink()
-            thumbnail = _thumbnail_path(item)
-            if thumbnail.is_file():
-                thumbnail.unlink()
+            for thumbnail in (_thumbnail_path(item), config.image_thumbnails_dir / _safe_relative_path(item)):
+                if thumbnail.is_file():
+                    thumbnail.unlink()
             removed += 1
     _cleanup_empty_dirs(root)
     _cleanup_empty_dirs(config.image_thumbnails_dir)

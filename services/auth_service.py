@@ -228,7 +228,6 @@ class AuthService:
             return None
         candidate_hash = _hash_key(candidate)
         with self._lock:
-            self._reload_locked()
             for index, item in enumerate(self._items):
                 if not bool(item.get("enabled", True)):
                     continue
