@@ -46,6 +46,23 @@ function formatBytes(value: number) {
   return `${size >= 10 || index === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[index]}`;
 }
 
+function getFilenameFromContentDisposition(value: string | null) {
+  const header = String(value || "").trim();
+  if (!header) {
+    return "";
+  }
+  const utf8Match = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const plainMatch = header.match(/filename\s*=\s*"?([^";]+)"?/i);
+  return plainMatch?.[1] || "";
+}
+
 const includeLabels: Array<{ key: keyof BackupInclude; label: string }> = [
   { key: "config", label: "系统配置" },
   { key: "register", label: "注册配置" },
@@ -130,11 +147,12 @@ export function BackupSettingsCard() {
         }
         throw new Error(message);
       }
+      const downloadName = getFilenameFromContentDisposition(response.headers.get("Content-Disposition")) || name || "backup.bin";
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = name || "backup.bin";
+      anchor.download = downloadName;
       document.body.append(anchor);
       anchor.click();
       anchor.remove();
