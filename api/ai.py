@@ -5,6 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
 from api.support import require_identity, resolve_image_base_url
+from services.content_filter import check_request, request_text
 from services.log_service import LoggedCall
 from services.protocol import (
     anthropic_v1_messages,
@@ -53,6 +54,14 @@ class AnthropicMessageRequest(BaseModel):
     stream: bool | None = None
 
 
+async def filter_or_log(call: LoggedCall, text: str) -> None:
+    try:
+        await run_in_threadpool(check_request, text)
+    except HTTPException as exc:
+        call.log("调用失败", status="failed", error=str(exc.detail))
+        raise
+
+
 def create_router() -> APIRouter:
     router = APIRouter()
 
@@ -74,6 +83,7 @@ def create_router() -> APIRouter:
         payload = body.model_dump(mode="python")
         payload["base_url"] = resolve_image_base_url(request)
         call = LoggedCall(identity, "/v1/images/generations", body.model, "文生图")
+        await filter_or_log(call, body.prompt)
         return await call.run(openai_v1_image_generations.handle, payload)
 
     @router.post("/v1/images/edits")
@@ -90,8 +100,10 @@ def create_router() -> APIRouter:
             stream: bool | None = Form(default=None),
     ):
         identity = require_identity(authorization)
+        call = LoggedCall(identity, "/v1/images/edits", model, "图生图")
         if n < 1 or n > 4:
             raise HTTPException(status_code=400, detail={"error": "n must be between 1 and 4"})
+        await filter_or_log(call, prompt)
         uploads = [*(image or []), *(image_list or [])]
         if not uploads:
             raise HTTPException(status_code=400, detail={"error": "image file is required"})
@@ -111,7 +123,6 @@ def create_router() -> APIRouter:
             "stream": stream,
             "base_url": resolve_image_base_url(request),
         }
-        call = LoggedCall(identity, "/v1/images/edits", model, "图生图")
         return await call.run(openai_v1_image_edit.handle, payload)
 
     @router.post("/v1/chat/completions")
@@ -120,6 +131,7 @@ def create_router() -> APIRouter:
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
         call = LoggedCall(identity, "/v1/chat/completions", model, "文本生成")
+        await filter_or_log(call, request_text(payload.get("prompt"), payload.get("messages")))
         return await call.run(openai_v1_chat_complete.handle, payload)
 
     @router.post("/v1/responses")
@@ -128,6 +140,7 @@ def create_router() -> APIRouter:
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
         call = LoggedCall(identity, "/v1/responses", model, "Responses")
+        await filter_or_log(call, request_text(payload.get("input"), payload.get("instructions")))
         return await call.run(openai_v1_response.handle, payload)
 
     @router.post("/v1/messages")
@@ -141,6 +154,7 @@ def create_router() -> APIRouter:
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
         call = LoggedCall(identity, "/v1/messages", model, "Messages")
+        await filter_or_log(call, request_text(payload.get("system"), payload.get("messages"), payload.get("tools")))
         return await call.run(anthropic_v1_messages.handle, payload, sse="anthropic")
 
     return router

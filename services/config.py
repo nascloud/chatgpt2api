@@ -133,6 +133,16 @@ class ConfigStore:
         return [level for item in levels if (level := str(item or "").strip().lower()) in allowed]
 
     @property
+    def sensitive_words(self) -> list[str]:
+        words = self.data.get("sensitive_words")
+        return [word for item in words if (word := str(item or "").strip())] if isinstance(words, list) else []
+
+    @property
+    def ai_review(self) -> dict[str, object]:
+        value = self.data.get("ai_review")
+        return value if isinstance(value, dict) else {}
+
+    @property
     def images_dir(self) -> Path:
         path = DATA_DIR / "images"
         path.mkdir(parents=True, exist_ok=True)
@@ -181,6 +191,8 @@ class ConfigStore:
         data["auto_remove_invalid_accounts"] = self.auto_remove_invalid_accounts
         data["auto_remove_rate_limited_accounts"] = self.auto_remove_rate_limited_accounts
         data["log_levels"] = self.log_levels
+        data["sensitive_words"] = self.sensitive_words
+        data["ai_review"] = self.ai_review
         data.pop("auth-key", None)
         return data
 

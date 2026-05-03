@@ -11,5 +11,15 @@
     "warning"
   ],
   "proxy": "",
-  "base_url": ""
+  "base_url": "",
+  "sensitive_words": [
+    "色情"
+  ],
+  "ai_review": {
+    "enabled": false,
+    "base_url": "",
+    "api_key": "",
+    "model": "gpt-5.4-mini",
+    "prompt": "判断用户请求是否允许。只回答 ALLOW 或 REJECT。"
+  }
 }
