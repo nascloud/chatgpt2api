@@ -38,6 +38,7 @@ class AccountService:
         self._lock = Lock()
         self._index = 0
         self._accounts = self._load_accounts()
+        self._image_inflight: dict[str, int] = {}
 
     @staticmethod
     def _clean_token(value: Any) -> str:
@@ -226,12 +227,14 @@ class AccountService:
 
     def _list_available_candidate_tokens(self, excluded_tokens: set[str] | None = None) -> list[str]:
         excluded = {self._clean_token(token) for token in (excluded_tokens or set()) if self._clean_token(token)}
+        max_concurrency = max(1, int(config.image_account_concurrency or 1))
         return [
             token
             for item in self._accounts
             if self._is_image_account_available(item)
                and (token := self._clean_token(item.get("access_token")))
                and token not in excluded
+               and int(self._image_inflight.get(token, 0)) < max_concurrency
         ]
 
     def _pick_next_candidate_token(self, excluded_tokens: set[str] | None = None) -> str:
@@ -242,6 +245,27 @@ class AccountService:
             access_token = tokens[self._index % len(tokens)]
             self._index += 1
             return access_token
+
+    def _acquire_next_candidate_token(self, excluded_tokens: set[str] | None = None) -> str:
+        with self._lock:
+            tokens = self._list_available_candidate_tokens(excluded_tokens)
+            if not tokens:
+                raise RuntimeError("no available image quota")
+            access_token = tokens[self._index % len(tokens)]
+            self._index += 1
+            self._image_inflight[access_token] = int(self._image_inflight.get(access_token, 0)) + 1
+            return access_token
+
+    def release_image_slot(self, access_token: str) -> None:
+        access_token = self._clean_token(access_token)
+        if not access_token:
+            return
+        with self._lock:
+            current_inflight = int(self._image_inflight.get(access_token, 0))
+            if current_inflight <= 1:
+                self._image_inflight.pop(access_token, None)
+            else:
+                self._image_inflight[access_token] = current_inflight - 1
 
     def refresh_account_state(self, access_token: str) -> dict | None:
         token_ref = anonymize_token(access_token)
@@ -266,12 +290,13 @@ class AccountService:
     def get_available_access_token(self) -> str:
         attempted_tokens: set[str] = set()
         while True:
-            access_token = self._pick_next_candidate_token(excluded_tokens=attempted_tokens)
+            access_token = self._acquire_next_candidate_token(excluded_tokens=attempted_tokens)
             attempted_tokens.add(access_token)
             token_ref = anonymize_token(access_token)
             account = self.refresh_account_state(access_token)
             if self._is_image_account_available(account or {}):
                 return access_token
+            self.release_image_slot(access_token)
             print(
                 f"[account-available] skip token={token_ref} "
                 f"quota={account.get('quota') if account else 'unknown'} "
@@ -388,6 +413,8 @@ class AccountService:
             self._accounts = [item for item in self._accounts if
                               self._clean_token(item.get("access_token")) not in target_set]
             removed = before - len(self._accounts)
+            for token in target_set:
+                self._image_inflight.pop(token, None)
             if self._accounts:
                 self._index %= len(self._accounts)
             else:
@@ -427,6 +454,7 @@ class AccountService:
         access_token = self._clean_token(access_token)
         if not access_token:
             return None
+        self.release_image_slot(access_token)
         with self._lock:
             index = self._find_account_index(access_token)
             if index < 0:

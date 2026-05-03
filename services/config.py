@@ -118,6 +118,13 @@ class ConfigStore:
             return 120
 
     @property
+    def image_account_concurrency(self) -> int:
+        try:
+            return max(1, int(self.data.get("image_account_concurrency", 1)))
+        except (TypeError, ValueError):
+            return 1
+
+    @property
     def auto_remove_invalid_accounts(self) -> bool:
         value = self.data.get("auto_remove_invalid_accounts", False)
         if isinstance(value, str):
@@ -196,6 +203,7 @@ class ConfigStore:
         data["refresh_account_interval_minute"] = self.refresh_account_interval_minute
         data["image_retention_days"] = self.image_retention_days
         data["image_poll_timeout_secs"] = self.image_poll_timeout_secs
+        data["image_account_concurrency"] = self.image_account_concurrency
         data["auto_remove_invalid_accounts"] = self.auto_remove_invalid_accounts
         data["auto_remove_rate_limited_accounts"] = self.auto_remove_rate_limited_accounts
         data["log_levels"] = self.log_levels

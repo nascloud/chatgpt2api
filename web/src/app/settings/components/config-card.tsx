@@ -23,6 +23,7 @@ export function ConfigCard() {
   const setRefreshAccountIntervalMinute = useSettingsStore((state) => state.setRefreshAccountIntervalMinute);
   const setImageRetentionDays = useSettingsStore((state) => state.setImageRetentionDays);
   const setImagePollTimeoutSecs = useSettingsStore((state) => state.setImagePollTimeoutSecs);
+  const setImageAccountConcurrency = useSettingsStore((state) => state.setImageAccountConcurrency);
   const setAutoRemoveInvalidAccounts = useSettingsStore((state) => state.setAutoRemoveInvalidAccounts);
   const setAutoRemoveRateLimitedAccounts = useSettingsStore((state) => state.setAutoRemoveRateLimitedAccounts);
   const setLogLevel = useSettingsStore((state) => state.setLogLevel);
@@ -149,6 +150,16 @@ export function ConfigCard() {
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
             <p className="text-xs text-stone-500">单位秒，等待上游图片结果的最长时间。</p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-stone-700">单账号图片并发</label>
+            <Input
+              value={String(config?.image_account_concurrency || "")}
+              onChange={(event) => setImageAccountConcurrency(event.target.value)}
+              placeholder="1"
+              className="h-10 rounded-xl border-stone-200 bg-white"
+            />
+            <p className="text-xs text-stone-500">限制每个账号同时处理的图片请求数量，默认 1。</p>
           </div>
           <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
             <Checkbox
