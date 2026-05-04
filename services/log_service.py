@@ -127,6 +127,16 @@ def _collect_urls(value: object) -> list[str]:
     return urls
 
 
+def _request_excerpt(text: object, limit: int = 1000) -> str:
+    value = str(text or "").strip()
+    if not value:
+        return ""
+    normalized = " ".join(value.split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 1].rstrip() + "…"
+
+
 def _image_error_response(exc: Exception) -> JSONResponse:
     message = str(exc)
     if "no available image quota" in message.lower():
@@ -170,6 +180,7 @@ class LoggedCall:
     model: str
     summary: str
     started: float = field(default_factory=time.time)
+    request_text: str = ""
 
     async def run(self, handler, *args, sse: str = "openai"):
         from services.protocol.conversation import ImageGenerationError
@@ -235,6 +246,9 @@ class LoggedCall:
             "duration_ms": int((time.time() - self.started) * 1000),
             "status": status,
         }
+        request_excerpt = _request_excerpt(self.request_text)
+        if request_excerpt:
+            detail["request_text"] = request_excerpt
         if error:
             detail["error"] = error
         collected_urls = [*(urls or []), *_collect_urls(result)]
