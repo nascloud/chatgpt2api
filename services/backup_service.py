@@ -16,6 +16,7 @@ from urllib.parse import quote, urlencode
 from curl_cffi import requests
 
 from services.config import BASE_DIR, CONFIG_FILE, DATA_DIR, config, load_backup_state, save_backup_state
+from services.image_tags_service import TAGS_FILE
 
 
 def _utc_now() -> datetime:
@@ -643,6 +644,7 @@ class BackupService:
                     _json_bytes(config.get_storage_backend().load_auth_keys()),
                 )
             if include.get("images"):
+                self._add_file_to_archive(archive, TAGS_FILE, "data/image_tags.json")
                 self._add_directory_to_archive(archive, config.images_dir, "data/images")
         return buffer.getvalue()
 

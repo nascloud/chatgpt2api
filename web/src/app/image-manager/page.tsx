@@ -92,7 +92,7 @@ function ImageManagerContent() {
   const selectedSet = useMemo(() => new Set(selectedPaths), [selectedPaths]);
   const selectedCount = deleteMode === "filtered" ? items.length : selectedPaths.length;
   const currentPageSelected = currentRows.length > 0 && currentRows.every((item) => selectedSet.has(imageKey(item)));
-  const allSelected = items.length > 0 && items.every((item) => selectedSet.has(imageKey(item)));
+  const allSelected = filteredItems.length > 0 && filteredItems.every((item) => selectedSet.has(imageKey(item)));
 
   const loadImages = async () => {
     setIsLoading(true);
@@ -319,7 +319,7 @@ function ImageManagerContent() {
                 本页全选
               </label>
               <label className="flex items-center gap-2">
-                <Checkbox checked={allSelected} onCheckedChange={(checked) => togglePaths(items.map(imageKey), Boolean(checked))} />
+                <Checkbox checked={allSelected} onCheckedChange={(checked) => togglePaths(filteredItems.map(imageKey), Boolean(checked))} />
                 全选结果
               </label>
               {selectedPaths.length > 0 ? <span>已选 {selectedPaths.length} 张</span> : null}
