@@ -76,6 +76,7 @@ export type ManagedImage = {
 };
 
 export type SystemLog = {
+  id: string;
   time: string;
   type: "call" | "account" | string;
   summary?: string;
@@ -333,6 +334,13 @@ export async function fetchSystemLogs(filters: { type?: string; start_date?: str
   if (filters.start_date) params.set("start_date", filters.start_date);
   if (filters.end_date) params.set("end_date", filters.end_date);
   return httpRequest<{ items: SystemLog[] }>(`/api/logs${params.toString() ? `?${params.toString()}` : ""}`);
+}
+
+export async function deleteSystemLogs(ids: string[]) {
+  return httpRequest<{ removed: number }>("/api/logs/delete", {
+    method: "POST",
+    body: { ids },
+  });
 }
 
 export async function fetchUserKeys() {
