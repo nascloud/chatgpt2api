@@ -1,17 +1,16 @@
 import { httpRequest } from "@/lib/request";
 
-export type AccountType = "Free" | "Plus" | "ProLite" | "Pro" | "Team";
+export type AccountType = string;
 export type AccountStatus = "正常" | "限流" | "异常" | "禁用";
 export type ImageModel = "gpt-image-2" | "codex-gpt-image-2";
 export type AuthRole = "admin" | "user";
 
 export type Account = {
-  id: string;
   access_token: string;
   type: AccountType;
   status: AccountStatus;
   quota: number;
-  imageQuotaUnknown?: boolean;
+  image_quota_unknown?: boolean;
   email?: string | null;
   user_id?: string | null;
   limits_progress?: Array<{
@@ -20,10 +19,10 @@ export type Account = {
     reset_after?: string;
   }>;
   default_model_slug?: string | null;
-  restoreAt?: string | null;
+  restore_at?: string | null;
   success: number;
   fail: number;
-  lastUsedAt: string | null;
+  last_used_at?: string | null;
 };
 
 type AccountListResponse = {
