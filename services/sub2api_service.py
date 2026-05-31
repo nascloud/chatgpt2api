@@ -583,3 +583,49 @@ class Sub2APIImportService:
 
 sub2api_config = Sub2APIConfig(SUB2API_CONFIG_FILE)
 sub2api_import_service = Sub2APIImportService(sub2api_config)
+
+
+def _is_import_running(server: dict) -> bool:
+    job = server.get("import_job")
+    return isinstance(job, dict) and job.get("status") in {"pending", "running"}
+
+
+def _auto_sync_worker(stop_event: threading.Event, interval_seconds: float) -> None:
+    while not stop_event.is_set():
+        try:
+            servers = sub2api_config.list_servers()
+            for server in servers:
+                server_id = _clean(server.get("id"))
+                if not server_id:
+                    continue
+                if _is_import_running(server):
+                    print(f"[sub2api-sync] {server.get('name', server_id)} import already running, skip")
+                    continue
+                try:
+                    accounts = list_remote_accounts(server)
+                    account_ids = [a["id"] for a in accounts if a.get("id")]
+                    if not account_ids:
+                        continue
+                    print(f"[sub2api-sync] {server.get('name', server_id)} importing {len(account_ids)} accounts")
+                    sub2api_import_service.start_import(server, account_ids)
+                except Exception as exc:
+                    print(f"[sub2api-sync] {server.get('name', server_id)} fail: {exc}")
+        except Exception as exc:
+            print(f"[sub2api-sync] error: {exc}")
+        stop_event.wait(interval_seconds)
+
+
+def start_sub2api_sync_scheduler(stop_event: threading.Event) -> threading.Thread | None:
+    from services.config import config
+    interval_minutes = config.sub2api_sync_interval_minutes
+    if interval_minutes <= 0:
+        return None
+    t = threading.Thread(
+        target=_auto_sync_worker,
+        args=(stop_event, interval_minutes * 60),
+        daemon=True,
+        name="sub2api-sync",
+    )
+    t.start()
+    print(f"[sub2api-sync] auto sync every {interval_minutes} minutes")
+    return t
