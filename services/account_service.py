@@ -1124,6 +1124,25 @@ class AccountService:
             for token in tokens
         ])
 
+    def _dedup_by_email(self, payloads: list[dict]) -> None:
+        email_to_token: dict[str, str] = {}
+        for existing_token, existing_account in self._accounts.items():
+            existing_email = str(existing_account.get("email") or "").strip().lower()
+            if existing_email:
+                email_to_token[existing_email] = existing_token
+
+        for payload in payloads:
+            incoming_email = str(payload.get("email") or "").strip().lower()
+            if not incoming_email:
+                continue
+            existing_token = email_to_token.get(incoming_email)
+            if existing_token is None:
+                continue
+            incoming_token = self._account_payload_token(payload)
+            if incoming_token and incoming_token != existing_token:
+                self._accounts.pop(existing_token, None)
+                self._token_aliases[existing_token] = incoming_token
+
     def _add_account_payloads(self, payloads: list[dict]) -> dict:
         deduped: dict[str, dict] = {}
         for payload in payloads:
@@ -1139,6 +1158,8 @@ class AccountService:
             return {"added": 0, "skipped": 0, "items": self.list_accounts()}
 
         with self._lock:
+            self._dedup_by_email(list(deduped.values()))
+
             added = 0
             skipped = 0
             for access_token, payload in deduped.items():

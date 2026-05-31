@@ -173,7 +173,7 @@ class Sub2APIServiceTests(unittest.TestCase):
         }
         importer = sub2api_service.Sub2APIImportService(config)
         account_service = MagicMock()
-        account_service.add_accounts.return_value = {"added": 1, "skipped": 0}
+        account_service.add_account_items.return_value = {"added": 1, "skipped": 0}
         account_service.refresh_accounts.return_value = {"refreshed": 1}
 
         with (
@@ -182,7 +182,9 @@ class Sub2APIServiceTests(unittest.TestCase):
         ):
             importer._run_import("server-id", {"id": "server-id"}, ["123"])
 
-        account_service.add_accounts.assert_called_once_with(["access-only"])
+        account_service.add_account_items.assert_called_once_with([
+            {"access_token": "access-only", "email": "", "plan_type": "", "source_type": "codex"}
+        ])
         account_service.refresh_accounts.assert_called_once_with(["access-only"])
 
 
