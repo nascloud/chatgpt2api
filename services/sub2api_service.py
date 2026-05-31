@@ -528,7 +528,7 @@ class Sub2APIImportService:
     def _run_import(self, server_id: str, server: dict, account_ids: list[str]) -> None:
         self._update_job(server_id, status="running")
 
-        tokens: list[str] = []
+        account_payloads: list[dict] = []
         max_workers = min(8, max(1, len(account_ids)))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_map = {
@@ -538,8 +538,13 @@ class Sub2APIImportService:
             for future in as_completed(future_map):
                 account_id = future_map[future]
                 try:
-                    token, _meta = future.result()
-                    tokens.append(token)
+                    token, meta = future.result()
+                    account_payloads.append({
+                        "access_token": token,
+                        "email": meta.get("email") or "",
+                        "plan_type": meta.get("plan_type") or "",
+                        "source_type": "codex",
+                    })
                 except Exception as exc:
                     self._append_error(server_id, account_id, str(exc) or "unknown error")
 
@@ -551,7 +556,7 @@ class Sub2APIImportService:
                     failed=failed,
                 )
 
-        if not tokens:
+        if not account_payloads:
             current = self._config.get_import_job(server_id) or {}
             self._update_job(
                 server_id,
@@ -561,7 +566,8 @@ class Sub2APIImportService:
             )
             return
 
-        add_result = account_service.add_accounts(tokens, source_type="codex")
+        tokens = [p["access_token"] for p in account_payloads]
+        add_result = account_service.add_account_items(account_payloads)
         refresh_result = account_service.refresh_accounts(tokens)
         current = self._config.get_import_job(server_id) or {}
         self._update_job(
