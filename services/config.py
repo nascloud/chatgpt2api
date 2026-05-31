@@ -386,6 +386,13 @@ class ConfigStore:
             return 5
 
     @property
+    def sub2api_sync_interval_minutes(self) -> int:
+        try:
+            return max(0, int(self.data.get("sub2api_sync_interval_minutes", 0)))
+        except (TypeError, ValueError):
+            return 0
+
+    @property
     def image_retention_days(self) -> int:
         try:
             return max(1, int(self.data.get("image_retention_days", 30)))
