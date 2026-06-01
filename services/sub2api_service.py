@@ -13,7 +13,7 @@ from threading import Lock
 from curl_cffi.requests import Session
 
 from services.account_service import account_service
-from services.config import DATA_DIR
+from services.config import DATA_DIR, config
 
 
 SUB2API_CONFIG_FILE = DATA_DIR / "sub2api_config.json"
@@ -475,9 +475,21 @@ def _fetch_access_token_for_account(server: dict, account_id: str) -> tuple[str,
     }
 
 
+class ImportAlreadyRunningError(Exception):
+    pass
+
+
 class Sub2APIImportService:
     def __init__(self, sub2api_config: Sub2APIConfig):
         self._config = sub2api_config
+        self._import_locks: dict[str, Lock] = {}
+        self._import_locks_lock = Lock()
+
+    def _get_lock(self, server_id: str) -> Lock:
+        with self._import_locks_lock:
+            if server_id not in self._import_locks:
+                self._import_locks[server_id] = Lock()
+            return self._import_locks[server_id]
 
     def start_import(self, server: dict, account_ids: list[str]) -> dict:
         ids = [_clean(item) for item in account_ids if _clean(item)]
@@ -485,22 +497,28 @@ class Sub2APIImportService:
             raise ValueError("account ids is required")
 
         server_id = _clean(server.get("id"))
-        job = {
-            "job_id": uuid.uuid4().hex,
-            "status": "pending",
-            "created_at": _now_iso(),
-            "updated_at": _now_iso(),
-            "total": len(ids),
-            "completed": 0,
-            "added": 0,
-            "skipped": 0,
-            "refreshed": 0,
-            "failed": 0,
-            "errors": [],
-        }
-        saved = self._config.set_import_job(server_id, job)
-        if saved is None:
-            raise ValueError("server not found")
+        lock = self._get_lock(server_id)
+        with lock:
+            fresh = self._config.get_server(server_id)
+            if fresh is None:
+                raise ValueError("server not found")
+            if _is_import_running(fresh):
+                raise ImportAlreadyRunningError(f"import already running for server {server_id}")
+
+            job = {
+                "job_id": uuid.uuid4().hex,
+                "status": "pending",
+                "created_at": _now_iso(),
+                "updated_at": _now_iso(),
+                "total": len(ids),
+                "completed": 0,
+                "added": 0,
+                "skipped": 0,
+                "refreshed": 0,
+                "failed": 0,
+                "errors": [],
+            }
+            self._config.set_import_job(server_id, job)
 
         thread = threading.Thread(
             target=self._run_import,
@@ -509,7 +527,7 @@ class Sub2APIImportService:
             daemon=True,
         )
         thread.start()
-        return dict(saved.get("import_job") or job)
+        return dict(job)
 
     def _update_job(self, server_id: str, **updates) -> None:
         current = self._config.get_import_job(server_id)
@@ -599,7 +617,6 @@ def _auto_sync_worker(stop_event: threading.Event, interval_seconds: float) -> N
                 if not server_id:
                     continue
                 if _is_import_running(server):
-                    print(f"[sub2api-sync] {server.get('name', server_id)} import already running, skip")
                     continue
                 try:
                     accounts = list_remote_accounts(server)
@@ -608,6 +625,10 @@ def _auto_sync_worker(stop_event: threading.Event, interval_seconds: float) -> N
                         continue
                     print(f"[sub2api-sync] {server.get('name', server_id)} importing {len(account_ids)} accounts")
                     sub2api_import_service.start_import(server, account_ids)
+                except ImportAlreadyRunningError:
+                    print(f"[sub2api-sync] {server.get('name', server_id)} import already running, skip")
+                except ValueError as exc:
+                    print(f"[sub2api-sync] {server.get('name', server_id)} fail: {exc}")
                 except Exception as exc:
                     print(f"[sub2api-sync] {server.get('name', server_id)} fail: {exc}")
         except Exception as exc:
@@ -616,7 +637,6 @@ def _auto_sync_worker(stop_event: threading.Event, interval_seconds: float) -> N
 
 
 def start_sub2api_sync_scheduler(stop_event: threading.Event) -> threading.Thread | None:
-    from services.config import config
     interval_minutes = config.sub2api_sync_interval_minutes
     if interval_minutes <= 0:
         return None
