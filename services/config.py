@@ -556,6 +556,7 @@ class ConfigStore:
     def get(self) -> dict[str, object]:
         data = dict(self.data)
         data["refresh_account_interval_minute"] = self.refresh_account_interval_minute
+        data["sub2api_sync_interval_minutes"] = self.sub2api_sync_interval_minutes
         data["image_retention_days"] = self.image_retention_days
         data["image_poll_timeout_secs"] = self.image_poll_timeout_secs
         data["image_poll_interval_secs"] = self.image_poll_interval_secs

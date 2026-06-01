@@ -23,6 +23,7 @@ export function ConfigCard() {
   const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
   const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
   const setRefreshAccountIntervalMinute = useSettingsStore((state) => state.setRefreshAccountIntervalMinute);
+  const setSub2APISyncIntervalMinutes = useSettingsStore((state) => state.setSub2APISyncIntervalMinutes);
   const setImageRetentionDays = useSettingsStore((state) => state.setImageRetentionDays);
   const setImagePollTimeoutSecs = useSettingsStore((state) => state.setImagePollTimeoutSecs);
   const setImageAccountConcurrency = useSettingsStore((state) => state.setImageAccountConcurrency);
@@ -95,6 +96,16 @@ export function ConfigCard() {
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
             <p className="text-xs text-stone-500">单位分钟，控制账号自动刷新频率。</p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-stone-700">Sub2API 自动同步间隔</label>
+            <Input
+              value={String(config?.sub2api_sync_interval_minutes ?? "")}
+              onChange={(event) => setSub2APISyncIntervalMinutes(event.target.value)}
+              placeholder="分钟（0 关闭）"
+              className="h-10 rounded-xl border-stone-200 bg-white"
+            />
+            <p className="text-xs text-stone-500">单位分钟，设为 0 关闭自动同步。自动从 Sub2API 拉取账号并导入。</p>
           </div>
           <div className="space-y-2">
             <label className="text-sm text-stone-700">全局代理</label>
