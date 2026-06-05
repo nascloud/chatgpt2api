@@ -39,7 +39,7 @@ jobs:
       - name: Rebase production onto main
         run: |
           git checkout production
-          git rebase main
+          git rebase -X theirs main
           git push origin production --force-with-lease
 
       - name: Set up QEMU
