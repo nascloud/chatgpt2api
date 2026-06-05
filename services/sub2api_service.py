@@ -608,44 +608,53 @@ def _is_import_running(server: dict) -> bool:
     return isinstance(job, dict) and job.get("status") in {"pending", "running"}
 
 
-def _auto_sync_worker(stop_event: threading.Event, interval_seconds: float) -> None:
+POLL_INTERVAL = 30
+
+
+def _auto_sync_worker(stop_event: threading.Event) -> None:
+    last_sync_time = 0.0
     while not stop_event.is_set():
-        try:
-            servers = sub2api_config.list_servers()
-            for server in servers:
-                server_id = _clean(server.get("id"))
-                if not server_id:
-                    continue
-                if _is_import_running(server):
-                    continue
-                try:
-                    accounts = list_remote_accounts(server)
-                    account_ids = [a["id"] for a in accounts if a.get("id")]
-                    if not account_ids:
+        interval_minutes = config.sub2api_sync_interval_minutes
+        now = time.time()
+        if interval_minutes > 0 and (now - last_sync_time) >= interval_minutes * 60:
+            last_sync_time = now
+            try:
+                servers = sub2api_config.list_servers()
+                for server in servers:
+                    server_id = _clean(server.get("id"))
+                    if not server_id:
                         continue
-                    print(f"[sub2api-sync] {server.get('name', server_id)} importing {len(account_ids)} accounts")
-                    sub2api_import_service.start_import(server, account_ids)
-                except ImportAlreadyRunningError:
-                    print(f"[sub2api-sync] {server.get('name', server_id)} import already running, skip")
-                except ValueError as exc:
-                    print(f"[sub2api-sync] {server.get('name', server_id)} fail: {exc}")
-                except Exception as exc:
-                    print(f"[sub2api-sync] {server.get('name', server_id)} fail: {exc}")
-        except Exception as exc:
-            print(f"[sub2api-sync] error: {exc}")
-        stop_event.wait(interval_seconds)
+                    if _is_import_running(server):
+                        continue
+                    try:
+                        accounts = list_remote_accounts(server)
+                        account_ids = [a["id"] for a in accounts if a.get("id")]
+                        if not account_ids:
+                            continue
+                        print(f"[sub2api-sync] {server.get('name', server_id)} importing {len(account_ids)} accounts")
+                        sub2api_import_service.start_import(server, account_ids)
+                    except ImportAlreadyRunningError:
+                        print(f"[sub2api-sync] {server.get('name', server_id)} import already running, skip")
+                    except ValueError as exc:
+                        print(f"[sub2api-sync] {server.get('name', server_id)} fail: {exc}")
+                    except Exception as exc:
+                        print(f"[sub2api-sync] {server.get('name', server_id)} fail: {exc}")
+            except Exception as exc:
+                print(f"[sub2api-sync] error: {exc}")
+        stop_event.wait(POLL_INTERVAL)
 
 
-def start_sub2api_sync_scheduler(stop_event: threading.Event) -> threading.Thread | None:
-    interval_minutes = config.sub2api_sync_interval_minutes
-    if interval_minutes <= 0:
-        return None
+def start_sub2api_sync_scheduler(stop_event: threading.Event) -> threading.Thread:
     t = threading.Thread(
         target=_auto_sync_worker,
-        args=(stop_event, interval_minutes * 60),
+        args=(stop_event,),
         daemon=True,
         name="sub2api-sync",
     )
     t.start()
-    print(f"[sub2api-sync] auto sync every {interval_minutes} minutes")
+    interval_minutes = config.sub2api_sync_interval_minutes
+    if interval_minutes > 0:
+        print(f"[sub2api-sync] auto sync every {interval_minutes} minutes")
+    else:
+        print(f"[sub2api-sync] scheduler started (paused, set sub2api_sync_interval_minutes > 0 in settings to enable)")
     return t
