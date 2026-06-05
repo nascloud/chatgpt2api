@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   sync:
@@ -37,3 +38,6 @@ jobs:
           git checkout production
           git rebase main
           git push origin production --force-with-lease
+
+      - name: Trigger Docker build
+        run: gh workflow run docker-publish.yml --ref production
