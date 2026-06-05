@@ -20,11 +20,10 @@ import { Button } from "@/components/ui/button";
 import {
   createImageEditTask,
   createImageGenerationTask,
-  fetchAccounts,
   fetchModels,
   fetchImageTasks,
+  fetchUserQuota,
   resumeImagePoll,
-  type Account,
   type ImageModel,
   type Model,
   type ImageTask,
@@ -115,9 +114,9 @@ function formatConversationTime(value: string) {
   }).format(date);
 }
 
-function formatAvailableQuota(accounts: Account[]) {
-  const availableAccounts = accounts.filter((account) => account.status !== "禁用");
-  return String(availableAccounts.reduce((sum, account) => sum + Math.max(0, account.quota), 0));
+function formatAvailableQuota(totalQuota: number, unlimitedCount: number) {
+  if (unlimitedCount > 0) return "∞";
+  return String(totalQuota);
 }
 
 function createId() {
@@ -444,7 +443,7 @@ async function recoverConversationHistory(items: ImageConversation[]) {
 }
 
 
-function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
+function ImagePageContent() {
   const didLoadQuotaRef = useRef(false);
   const conversationsRef = useRef<ImageConversation[]>([]);
   const loadCancelledRef = useRef(false);
@@ -717,17 +716,13 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   }, []);
 
   const loadQuota = useCallback(async () => {
-    if (!isAdmin) {
-      setAvailableQuota("--");
-      return;
-    }
     try {
-      const data = await fetchAccounts();
-      setAvailableQuota(formatAvailableQuota(data.items));
+      const data = await fetchUserQuota();
+      setAvailableQuota(formatAvailableQuota(data.total_quota, data.unlimited_quota_count));
     } catch {
       setAvailableQuota((prev) => (prev === "加载中..." ? "--" : prev));
     }
-  }, [isAdmin]);
+  }, []);
 
   useEffect(() => {
     if (didLoadQuotaRef.current) {
@@ -744,7 +739,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     return () => {
       window.removeEventListener("focus", handleFocus);
     };
-  }, [isAdmin, loadQuota]);
+  }, [loadQuota]);
 
   // 切换会话时保存旧会话滚动位置，并隐藏容器防止闪烁
   useLayoutEffect(() => {
@@ -1795,5 +1790,5 @@ export default function ImagePage() {
     );
   }
 
-  return <ImagePageContent isAdmin={session.role === "admin"} />;
+  return <ImagePageContent />;
 }
