@@ -33,8 +33,7 @@ def create_app() -> FastAPI:
             stop_event.set()
             thread.join(timeout=1)
             cleanup_thread.join(timeout=1)
-            if sub2api_sync_thread:
-                sub2api_sync_thread.join(timeout=1)
+            sub2api_sync_thread.join(timeout=1)
             backup_service.stop()
 
     app = FastAPI(title="chatgpt2api", version=app_version, lifespan=lifespan)
