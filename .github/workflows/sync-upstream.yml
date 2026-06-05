@@ -54,5 +54,5 @@ jobs:
 
       - name: Trigger Docker build
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: gh workflow run docker-publish.yml --ref production
