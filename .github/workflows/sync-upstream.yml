@@ -12,7 +12,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -29,8 +29,8 @@ jobs:
       - name: Sync main with upstream
         run: |
           git checkout main
-          git reset --hard upstream/main
-          git push origin main --force-with-lease
+          git merge upstream/main --no-edit
+          git push origin main
 
       - name: Rebase production onto main
         run: |
