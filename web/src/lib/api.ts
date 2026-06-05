@@ -458,6 +458,19 @@ export async function updateAccount(
   });
 }
 
+export type UserQuota = {
+  total_quota: number;
+  unlimited_quota_count: number;
+  active: number;
+  limited: number;
+  total_success: number;
+  total_fail: number;
+};
+
+export async function fetchUserQuota() {
+  return httpRequest<UserQuota>("/v1/quota");
+}
+
 export async function generateImage(prompt: string, model?: ImageModel, size?: string, quality = "auto") {
   return httpRequest<ImageResponse>(
     "/v1/images/generations",

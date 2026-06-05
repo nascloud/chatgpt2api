@@ -188,6 +188,20 @@ def create_router() -> APIRouter:
             raise HTTPException(status_code=404, detail={"error": "file not found"}) from exc
         return FileResponse(path, filename=path.name)
 
+    @router.get("/v1/quota")
+    async def get_quota(authorization: str | None = Header(default=None)):
+        require_identity(authorization)
+        from services.account_service import account_service as acct_svc
+        stats = acct_svc.get_stats()
+        return {
+            "total_quota": stats["total_quota"],
+            "unlimited_quota_count": stats["unlimited_quota_count"],
+            "active": stats["active"],
+            "limited": stats["limited"],
+            "total_success": stats["total_success"],
+            "total_fail": stats["total_fail"],
+        }
+
     @router.post("/v1/ppt/generations")
     async def create_ppt_task(body: EditableFileTaskRequest, request: Request, authorization: str | None = Header(default=None)):
         identity = require_identity(authorization)
