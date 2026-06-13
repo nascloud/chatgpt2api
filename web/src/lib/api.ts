@@ -34,6 +34,8 @@ export type Account = {
   restore_at?: string | null;
   success: number;
   fail: number;
+  /** 当前图片在途数(正在生成、尚未结束的图片数)。号池空闲时持续 > 0 表示并发槽位泄漏。 */
+  image_inflight?: number;
   last_used_at?: string | null;
   proxy?: string | null;
 };
@@ -260,6 +262,14 @@ export type UserKey = {
   enabled: boolean;
   created_at: string | null;
   last_used_at: string | null;
+};
+
+export type OutlookPoolStats = {
+  unused: number;
+  in_use: number;
+  used: number;
+  token_invalid: number;
+  failed: number;
 };
 
 export type RegisterConfig = {
@@ -695,6 +705,13 @@ export async function stopRegister() {
 
 export async function resetRegister() {
   return httpRequest<{ register: RegisterConfig }>("/api/register/reset", { method: "POST" });
+}
+
+export async function resetOutlookPool(scope: "all" | "failed" | "unused" = "all") {
+  return httpRequest<{ register: RegisterConfig }>("/api/register/outlook-pool/reset", {
+    method: "POST",
+    body: { scope },
+  });
 }
 
 // ── CPA (CLIProxyAPI) ──────────────────────────────────────────────
