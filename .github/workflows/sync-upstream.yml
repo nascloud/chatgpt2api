@@ -30,6 +30,11 @@ jobs:
           git remote add upstream https://github.com/basketikun/chatgpt2api.git
           git fetch upstream
 
+      - name: Sync tags from upstream
+        run: |
+          git fetch upstream --tags --force
+          git push origin --tags
+
       - name: Sync main with upstream
         run: |
           git checkout main
