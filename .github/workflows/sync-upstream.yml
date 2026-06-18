@@ -11,6 +11,7 @@ env:
 permissions:
   contents: write
   packages: write
+  workflows: write
 
 jobs:
   sync:
@@ -30,16 +31,20 @@ jobs:
           git remote add upstream https://github.com/basketikun/chatgpt2api.git
           git fetch upstream
 
-      - name: Sync tags from upstream
-        run: |
-          git fetch upstream --tags --force
-          git push origin --tags
-
       - name: Sync main with upstream
         run: |
           git checkout main
           git merge upstream/main --no-edit
           git push origin main
+
+      - name: Create version tag
+        run: |
+          VERSION=$(cat VERSION)
+          TAG="v$VERSION"
+          if ! git ls-remote origin "refs/tags/$TAG" | grep -q .; then
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
 
       - name: Rebase production onto main
         run: |
