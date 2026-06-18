@@ -37,6 +37,7 @@ jobs:
           git push origin main
 
       - name: Create version tag
+        continue-on-error: true
         run: |
           VERSION=$(cat VERSION)
           TAG="v$VERSION"
