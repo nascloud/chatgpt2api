@@ -4,6 +4,16 @@ on:
   schedule:
     - cron: "0 2 * * *"
   workflow_dispatch:
+    inputs:
+      build_only:
+        description: "Only rebuild the current production branch"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
 
 env:
   IMAGE_NAME: chatgpt2api
@@ -14,6 +24,7 @@ permissions:
 
 jobs:
   sync:
+    if: ${{ inputs.build_only != true }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -29,11 +40,17 @@ jobs:
         run: |
           git remote add upstream https://github.com/basketikun/chatgpt2api.git
           git fetch upstream
+          git fetch origin main:refs/remotes/origin/main production:refs/remotes/origin/production
 
       - name: Sync main with upstream
         run: |
-          git checkout main
+          git checkout -B main origin/main
           git merge upstream/main --no-edit
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short
+            exit 1
+          fi
+          git merge-base --is-ancestor upstream/main main
           git push origin main
 
       - name: Create version tag
@@ -48,9 +65,56 @@ jobs:
 
       - name: Rebase production onto main
         run: |
-          git checkout production
-          git rebase -X theirs main
+          git checkout -B production origin/production
+          git rebase main
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short
+            exit 1
+          fi
+          git merge-base --is-ancestor main production
           git push origin production --force-with-lease
+
+  build:
+    runs-on: ubuntu-latest
+    needs: sync
+    if: ${{ always() && (needs.sync.result == 'success' || inputs.build_only == true) }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Checkout production for build
+        run: |
+          git fetch origin production:refs/remotes/origin/production
+          git checkout -B production origin/production
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate Python dependencies
+        run: |
+          python -m pip install --upgrade uv
+          uv sync --frozen --no-dev --no-install-project
+
+      - name: Validate web build
+        working-directory: web
+        run: |
+          npm install
+          NEXT_PUBLIC_APP_VERSION="$(cat ../VERSION)" npm run build
 
       - name: Read version
         id: version
