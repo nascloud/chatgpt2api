@@ -46,6 +46,10 @@ jobs:
         run: |
           git checkout -B main origin/main
           git merge upstream/main --no-edit
+          git restore --source=origin/main --staged --worktree .github/workflows
+          if ! git diff --cached --quiet -- .github/workflows; then
+            git commit -m "Preserve repository workflows"
+          fi
           if [ -n "$(git status --porcelain)" ]; then
             git status --short
             exit 1
