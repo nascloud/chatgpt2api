@@ -62,9 +62,9 @@ jobs:
         run: |
           VERSION=$(cat VERSION)
           TAG="v$VERSION"
-          if ! git ls-remote origin "refs/tags/$TAG" | grep -q .; then
-            git tag "$TAG"
-            git push origin "$TAG"
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            git tag --force "$TAG" HEAD
+            git push origin "refs/tags/$TAG"
           fi
 
       - name: Rebase production onto main
