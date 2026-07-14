@@ -33,3 +33,20 @@ git_cache/
 loginwithpassword_*/
 logwithemailverifycode_*/
 test_batch_output/
+
+# Test sources and local diagnostic scripts
+test/
+tests/
+__tests__/
+test_*.py
+*_test.py
+*_spec.py
+conftest.py
+*.test.js
+*.test.jsx
+*.test.ts
+*.test.tsx
+*.spec.js
+*.spec.jsx
+*.spec.ts
+*.spec.tsx
